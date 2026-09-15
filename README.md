@@ -76,5 +76,5 @@ docker compose down -v
 backend/   API Express, client MQTT, Prisma/PostgreSQL
 mobile/    Application Expo
 infra/     Kit Mosquitto + simulateur (non modifié)
-docs/      Architecture, décisions, journaux J1–J4
+docs/      Architecture, décisions, plans et journaux J1–J4 (voir docs/repartition.md)
 ```

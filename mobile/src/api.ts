@@ -1,3 +1,5 @@
+import Constants from "expo-constants";
+
 export type Quantity = {
   value: number;
   unit: string;
@@ -36,14 +38,31 @@ export type RoomsResponse = {
   rooms: RoomSummary[];
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+function lanHostFromExpo(): string | null {
+  const candidates = [Constants.expoConfig?.hostUri, Constants.linkingUri];
+  for (const value of candidates) {
+    if (!value) {
+      continue;
+    }
+    const match = value.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
 
 export function getApiUrl(): string {
-  return API_URL;
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  const lanHost = lanHostFromExpo();
+  if (lanHost) {
+    return `http://${lanHost}:3000`;
+  }
+  return fromEnv ?? "http://localhost:3000";
 }
 
 export async function fetchRooms(): Promise<RoomsResponse> {
-  const response = await fetch(`${API_URL}/api/rooms`);
+  const response = await fetch(`${getApiUrl()}/api/rooms`);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
