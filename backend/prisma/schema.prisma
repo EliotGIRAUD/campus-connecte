@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id                 String         @id
+  roomId             String
+  label              String
+  ventilation        Boolean?
+  availability       String         @default("unknown")
+  availabilityAt     DateTime?
+  availabilityReason String?
+  lastMessageId      String?
+  lastObservedAt     DateTime?
+  lastReceivedAt     DateTime?
+  temperature        Float?
+  temperatureUnit    String?
+  co2                Float?
+  co2Unit            String?
+  updatedAt          DateTime       @updatedAt
+  measurements       Measurement[]
+}
+
+model Measurement {
+  messageId       String   @id
+  deviceId        String
+  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  roomId          String
+  observedAt      DateTime
+  receivedAt      DateTime
+  temperature     Float
+  temperatureUnit String
+  co2             Float
+  co2Unit         String
+
+  @@index([deviceId, observedAt(sort: Desc)])
+}

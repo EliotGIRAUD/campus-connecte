@@ -1,0 +1,102 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    entrypoint: ["/bin/sh", "/mosquitto/config/start.sh"]
+    environment:
+      SIMULATOR_PASSWORD: ${SIMULATOR_PASSWORD:-simulator-demo}
+      BACKEND_PASSWORD: ${BACKEND_PASSWORD:-backend-demo}
+      TEACHER_PASSWORD: ${TEACHER_PASSWORD:-teacher-demo}
+    ports:
+      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infra/mosquitto:/mosquitto/config:ro
+      - broker-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -u teacher -P \"$$TEACHER_PASSWORD\" -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+
+  simulator:
+    build: ./infra
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_USER: simulator
+      MQTT_PASSWORD: ${SIMULATOR_PASSWORD:-simulator-demo}
+      PUBLISH_INTERVAL: ${PUBLISH_INTERVAL:-2}
+    volumes:
+      - ./infra/devices.json:/app/devices.json:ro
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+
+  tools:
+    build: ./infra
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "tools.cli"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_USER: teacher
+      MQTT_PASSWORD: ${TEACHER_PASSWORD:-teacher-demo}
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  tests:
+    build: ./infra
+    profiles: ["test"]
+    command: ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_USER: teacher
+      MQTT_PASSWORD: ${TEACHER_PASSWORD:-teacher-demo}
+      BACKEND_PASSWORD: ${BACKEND_PASSWORD:-backend-demo}
+      RUN_INTEGRATION: "1"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      simulator:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: campus
+      POSTGRES_DB: campus
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U campus -d campus"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://campus:campus@postgres:5432/campus
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USER: backend
+      MQTT_PASSWORD: ${BACKEND_PASSWORD:-backend-demo}
+      FRESHNESS_MS: ${FRESHNESS_MS:-10000}
+      HISTORY_LIMIT: ${HISTORY_LIMIT:-200}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  broker-data:
+  pg-data:
