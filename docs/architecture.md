@@ -40,3 +40,5 @@ Les objets `sensor-001` à `sensor-003` restent les mêmes du topic MQTT jusqu�
 | `COMMAND_TIMEOUT_MS` | 15000 (prévu J3) |
 | `ALERT_CO2_PPM` | 1500 (prévu J4) |
 | `HISTORY_LIMIT` | 200 |
+
+Pourquoi PostgreSQL et un CQRS léger : [décision 002](decisions/002-architecture.md).
