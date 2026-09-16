@@ -1,7 +1,9 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
+  type AppStateStatus,
   LogBox,
   Pressable,
   RefreshControl,
@@ -10,8 +12,10 @@ import {
   Text,
   View,
 } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { fetchRooms, getApiUrl, type DeviceSummary, type RoomSummary } from "./src/api";
+import { loadRoomsCache, saveRoomsCache } from "./src/cache";
 import { colors } from "./src/theme";
 
 LogBox.ignoreLogs(["Cannot connect to Expo CLI"]);
@@ -84,7 +88,7 @@ function RoomCard({
         </View>
         <View style={styles.statusRow}>
           <StatusDot online={Boolean(online)} />
-          <Text style={styles.statusText}>{online ? "En ligne" : "Hors ligne"}</Text>
+          <Text style={styles.statusText}>{online ? "Objet en ligne" : "Objet hors ligne"}</Text>
         </View>
       </View>
       {latest ? (
@@ -162,8 +166,18 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [phoneOnline, setPhoneOnline] = useState(true);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  const loadingRef = useRef(false);
+  const roomsRef = useRef(rooms);
+  roomsRef.current = rooms;
 
   const load = useCallback(async (isRefresh = false) => {
+    if (loadingRef.current) {
+      return;
+    }
+    loadingRef.current = true;
     if (isRefresh) {
       setRefreshing(true);
     }
@@ -171,20 +185,66 @@ export default function App() {
       const data = await fetchRooms();
       setRooms(data.rooms);
       setError(null);
+      setFromCache(false);
+      await saveRoomsCache(data.rooms);
+      setCachedAt(new Date().toISOString());
     } catch {
-      setError("Impossible de joindre le serveur");
+      const cache = await loadRoomsCache();
+      if (cache && cache.rooms.length > 0) {
+        setRooms(cache.rooms);
+        setCachedAt(cache.cachedAt);
+        setFromCache(true);
+        setError(null);
+      } else if (roomsRef.current.length === 0) {
+        setError("Impossible de joindre le serveur");
+      } else {
+        setFromCache(true);
+        setError(null);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
+      loadingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    void (async () => {
+      const cache = await loadRoomsCache();
+      if (!cancelled && cache) {
+        setRooms(cache.rooms);
+        setCachedAt(cache.cachedAt);
+        setFromCache(true);
+        setLoading(false);
+      }
+      await load();
+    })();
     const id = setInterval(() => {
       void load();
     }, POLL_MS);
-    return () => clearInterval(id);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+      setPhoneOnline(online);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const onChange = (next: AppStateStatus) => {
+      if (next === "active") {
+        void load();
+      }
+    };
+    const sub = AppState.addEventListener("change", onChange);
+    return () => sub.remove();
   }, [load]);
 
   const selected = rooms.find((room) => room.room_id === selectedId) ?? null;
@@ -194,6 +254,25 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
+      {!phoneOnline ? (
+        <View style={styles.offlineBanner} accessibilityRole="alert">
+          <Text style={styles.offlineBannerText}>Téléphone hors ligne</Text>
+          {cachedAt ? (
+            <Text style={styles.offlineBannerHint}>
+              Cache local du {formatDate(cachedAt)}
+              {fromCache ? " · consultation hors ligne" : ""}
+            </Text>
+          ) : (
+            <Text style={styles.offlineBannerHint}>Aucune donnée en cache</Text>
+          )}
+        </View>
+      ) : fromCache && cachedAt ? (
+        <View style={styles.cacheBanner}>
+          <Text style={styles.cacheBannerText}>
+            Affichage du cache ({formatDate(cachedAt)}) — reconnexion…
+          </Text>
+        </View>
+      ) : null}
       {selected && device ? (
         <RoomDetail device={device} onBack={() => setSelectedId(null)} />
       ) : (
@@ -205,7 +284,7 @@ export default function App() {
               {rooms.length} salle{rooms.length > 1 ? "s" : ""} · actualisation {POLL_MS / 1000} s
             </Text>
           </View>
-          {loading ? (
+          {loading && rooms.length === 0 ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.accent} />
               <Text style={styles.state}>Chargement…</Text>
@@ -263,6 +342,23 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  offlineBanner: {
+    backgroundColor: colors.dangerMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.danger,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  offlineBannerText: { color: colors.danger, fontWeight: "700", fontSize: 14 },
+  offlineBannerHint: { marginTop: 2, color: colors.muted, fontSize: 12 },
+  cacheBanner: {
+    backgroundColor: colors.warnMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.warn,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  cacheBannerText: { color: colors.warn, fontWeight: "600", fontSize: 13 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
   kicker: {
     color: colors.accent,

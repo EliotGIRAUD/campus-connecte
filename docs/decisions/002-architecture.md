@@ -59,7 +59,7 @@ Comparaison SQLite / PostgreSQL / Mongo et CRUD / CQRS / event sourcing. Le cont
 ## Vérification
 
 - Doublon MQTT : log `doublon ignore`, une seule ligne `Measurement`.
-- Mesure ancienne : log `mesure ancienne conservee sans remplacer l etat courant` ; `GET /api/rooms` garde la mesure la plus récente.
+- Mesure ancienne : log `mesure ancienne conservee` ; `GET /api/rooms` garde la mesure la plus récente.
 - `GET /api/rooms` lit `Device` ; `GET /api/devices/:id` lit aussi l’historique `Measurement`.
 - `GET /health` : base `up`.
 

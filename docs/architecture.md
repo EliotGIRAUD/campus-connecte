@@ -15,8 +15,8 @@ flowchart LR
 | Capteur | Produit température, CO₂, état, disponibilité | Simulateur Python du kit |
 | Transport | Publication / abonnement, retained, Last Will | Mosquitto MQTT 3.1.1 |
 | Backend | Valide, identifie l’objet, persiste, expose l’API | Node.js, Express, mqtt.js, Zod |
-| Stockage | Dernier état + historique borné | PostgreSQL, Prisma |
-| Mobile | Affiche mesures, unités, dates et états d’UI | React Native, Expo |
+| Stockage | Dernier état + historique borné (`HISTORY_LIMIT`) | PostgreSQL, Prisma |
+| Mobile | Affiche mesures, cache local, états réseau distincts | React Native, Expo, AsyncStorage, NetInfo |
 
 Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’historique et (à partir de J3) les droits et le suivi des commandes.
 
@@ -24,9 +24,27 @@ Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’h
 
 Le broker achemine des messages sans connaître les salles, les utilisateurs ni l’historique métier. L’API répond à des requêtes du téléphone : dernier état d’une salle, fraîcheur, erreurs explicites. MQTT est publication/abonnement ; HTTP est requête/réponse.
 
-## Actualisation
+## Actualisation et fraîcheur
 
-L’application interroge `GET /api/rooms` toutes les 3 secondes. Une mesure est **récente** si son `observed_at` a moins de **10 secondes** (environ cinq publications manquées du simulateur, intervalle 2 s). La disponibilité MQTT (`online` / `offline`) est une information distincte : un objet peut être connecté et pourtant n’émettre plus de télémétrie (`pause`).
+L’application interroge `GET /api/rooms` toutes les 3 secondes. Une mesure est **récente** (`fresh`) si son `observed_at` a moins de **10 s** (`FRESHNESS_MS`) ; sinon `stale`. La disponibilité MQTT (`online` / `offline`) est distincte : un objet peut rester `online` sans télémétrie (`pause`) — l’UI affiche alors « Donnée ancienne », pas « Téléphone hors ligne ».
+
+## Persistance
+
+- **`Measurement`** : journal append-only (sauf purge de borne). Contrainte unique sur `message_id` → doublon MQTT ignoré.
+- **`Device`** : projection du dernier état. Une mesure en retard est stockée mais ne fait pas reculer `lastObservedAt`.
+- **Borne** : après insertion, au plus `HISTORY_LIMIT` (200) mesures par objet (les plus récentes par `observedAt`).
+
+## Cache mobile
+
+Après une lecture réussie, les salles sont sauvées dans AsyncStorage avec `cachedAt`. Hors ligne (NetInfo), l’app affiche ce cache avec dates. Au retour au premier plan (AppState `active`), un seul polling reprend sans écran de chargement infini si le cache existe. Pas de file de commandes hors ligne (J3).
+
+Trois bandeaux distincts :
+
+| Signal | Signification |
+|---|---|
+| Téléphone hors ligne | NetInfo : pas de réseau sur le mobile |
+| Donnée ancienne | `freshness: stale` (mesure trop vieille) |
+| Objet hors ligne | `availability: offline` (MQTT / LWT) |
 
 ## Identifiants
 
@@ -34,11 +52,11 @@ Les objets `sensor-001` à `sensor-003` restent les mêmes du topic MQTT jusqu�
 
 ## Paramètres
 
-| Clé | Valeur J1 |
+| Clé | Valeur |
 |---|---|
 | `FRESHNESS_MS` | 10000 |
 | `COMMAND_TIMEOUT_MS` | 15000 (prévu J3) |
 | `ALERT_CO2_PPM` | 1500 (prévu J4) |
 | `HISTORY_LIMIT` | 200 |
 
-Pourquoi PostgreSQL et un CQRS léger : [décision 002](decisions/002-architecture.md).
+Pourquoi PostgreSQL et un CQRS léger : [décision 002](decisions/002-architecture.md). Déduplication et cache : [décision 003](decisions/003-deduplication-cache.md).

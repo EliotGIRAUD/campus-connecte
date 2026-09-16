@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { config } from "../config";
 import { prisma } from "../db";
 import { logger } from "../logger";
 import {
@@ -8,6 +9,26 @@ import {
   stateSchema,
   telemetrySchema,
 } from "./contract";
+
+/** Keep at most HISTORY_LIMIT measurements per device (newest by observedAt). */
+async function trimHistory(deviceId: string): Promise<void> {
+  const excess = await prisma.measurement.findMany({
+    where: { deviceId },
+    orderBy: { observedAt: "desc" },
+    skip: config.historyLimit,
+    select: { messageId: true },
+  });
+  if (excess.length === 0) {
+    return;
+  }
+  const result = await prisma.measurement.deleteMany({
+    where: { messageId: { in: excess.map((row) => row.messageId) } },
+  });
+  logger.info(
+    { deviceId, deleted: result.count, historyLimit: config.historyLimit },
+    "historique borne",
+  );
+}
 
 function parseJson(raw: Buffer): unknown {
   return JSON.parse(raw.toString("utf8"));
@@ -91,6 +112,8 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
     throw error;
   }
 
+  await trimHistory(topicDeviceId);
+
   if (!shouldUpdateLatest(device.lastObservedAt, observedAt)) {
     logger.info(
       {
@@ -99,7 +122,7 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
         observedAt: message.observed_at,
         currentObservedAt: device.lastObservedAt,
       },
-      "mesure ancienne conservee sans remplacer l etat courant",
+      "mesure ancienne conservee",
     );
     return;
   }
