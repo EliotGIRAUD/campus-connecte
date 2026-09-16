@@ -1,5 +1,8 @@
 export const config = {
   port: Number(process.env.PORT ?? 3000),
+  databaseUrl: process.env.DATABASE_URL ?? "postgresql://campus:campus@localhost:5432/campus",
+  lakeDatabaseUrl:
+    process.env.LAKE_DATABASE_URL ?? "postgresql://campus:campus@localhost:5432/campus_lake",
   mqtt: {
     url: process.env.MQTT_URL ?? "mqtt://localhost:1883",
     username: process.env.MQTT_USER ?? "backend",

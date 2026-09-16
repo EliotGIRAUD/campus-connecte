@@ -65,6 +65,6 @@ Comparaison SQLite / PostgreSQL / Mongo et CRUD / CQRS / event sourcing. Le cont
 
 ## Limite
 
-- Une seule base (pas de base de lecture séparée).
+- Une seule base API à l’origine ; le data lake (`campus_lake`) est ajouté en [004](004-dual-database.md).
 - Pas de bus d’événements ni de replay.
 - Commandes, auth et alertes : J3 / J4. Le schéma CQRS est déjà là pour les accueillir : un `GET` ne publiera pas de commande MQTT.

@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { config } from "../config";
 import { prisma } from "../db";
+import { lakePrisma } from "../lake-db";
 import { freshnessOf } from "../mqtt/contract";
 import { isMqttConnected } from "../mqtt/client";
 
@@ -57,14 +58,21 @@ export function createApp() {
   app.get("/health", async (_req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
+      await lakePrisma.$queryRaw`SELECT 1`;
       res.json({
         ok: true,
         mqtt: isMqttConnected() ? "connected" : "disconnected",
         db: "up",
+        lake_db: "up",
         freshness_ms: config.freshnessMs,
       });
     } catch {
-      res.status(503).json({ ok: false, mqtt: isMqttConnected() ? "connected" : "disconnected", db: "down" });
+      res.status(503).json({
+        ok: false,
+        mqtt: isMqttConnected() ? "connected" : "disconnected",
+        db: "down",
+        lake_db: "down",
+      });
     }
   });
 
