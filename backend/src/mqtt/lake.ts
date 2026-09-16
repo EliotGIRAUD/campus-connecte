@@ -1,58 +1,43 @@
-import { lakePrisma } from "../lake-db";
+import { lakeEvents } from "../lake-db";
 import { logger } from "../logger";
 import { parseTopic } from "./contract";
 
-export type LakeOutcome =
-  | "received"
-  | "ingested"
-  | "rejected"
-  | "duplicate"
-  | "stale"
-  | "unknown_device"
-  | "ignored_topic";
-
-function parsePayload(raw: Buffer): unknown | null {
+function parsePayload(raw: Buffer): unknown | undefined {
   try {
     return JSON.parse(raw.toString("utf8")) as unknown;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
-/** Append every MQTT message to the data lake before business rules run. */
-export async function recordRawMessage(topic: string, payload: Buffer): Promise<string | null> {
+function extractMessageId(payload: unknown): string | null {
+  if (payload && typeof payload === "object" && "message_id" in payload) {
+    const value = (payload as { message_id?: unknown }).message_id;
+    return typeof value === "string" ? value : null;
+  }
+  return null;
+}
+
+/**
+ * Append-only write to the MongoDB data lake.
+ * No updates — one document per MQTT message, timestamped for history.
+ */
+export async function recordRawMessage(topic: string, payload: Buffer): Promise<void> {
   const parsedTopic = parseTopic(topic);
   const payloadRaw = payload.toString("utf8");
-  const payloadJson = parsePayload(payload);
+  const parsed = parsePayload(payload);
 
   try {
-    const event = await lakePrisma.rawMqttEvent.create({
-      data: {
-        topic,
-        deviceId: parsedTopic?.deviceId ?? null,
-        messageKind: parsedTopic?.kind ?? null,
-        payloadRaw,
-        payloadJson: payloadJson === null ? undefined : (payloadJson as object),
-        outcome: parsedTopic ? "received" : "ignored_topic",
-      },
-    });
-    return event.id;
-  } catch (error) {
-    logger.warn({ topic, err: error }, "echec ecriture data lake");
-    return null;
-  }
-}
-
-export async function setLakeOutcome(eventId: string | null, outcome: LakeOutcome): Promise<void> {
-  if (!eventId) {
-    return;
-  }
-  try {
-    await lakePrisma.rawMqttEvent.update({
-      where: { id: eventId },
-      data: { outcome },
+    await lakeEvents().insertOne({
+      topic,
+      deviceId: parsedTopic?.deviceId ?? null,
+      messageKind: parsedTopic?.kind ?? null,
+      messageId: extractMessageId(parsed),
+      payloadRaw,
+      payload: parsed,
+      receivedAt: new Date(),
     });
   } catch (error) {
-    logger.warn({ eventId, outcome, err: error }, "echec mise a jour outcome lake");
+    logger.warn({ topic, err: error }, "echec ecriture data lake mongodb");
   }
 }

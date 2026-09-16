@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import { config } from "../config";
 import { prisma } from "../db";
-import { lakePrisma } from "../lake-db";
+import { pingLake } from "../lake-db";
 import { freshnessOf } from "../mqtt/contract";
 import { isMqttConnected } from "../mqtt/client";
 
@@ -56,24 +56,28 @@ export function createApp() {
   app.use(express.json());
 
   app.get("/health", async (_req, res) => {
+    let dbOk = false;
+    let lakeOk = false;
     try {
       await prisma.$queryRaw`SELECT 1`;
-      await lakePrisma.$queryRaw`SELECT 1`;
-      res.json({
-        ok: true,
-        mqtt: isMqttConnected() ? "connected" : "disconnected",
-        db: "up",
-        lake_db: "up",
-        freshness_ms: config.freshnessMs,
-      });
+      dbOk = true;
     } catch {
-      res.status(503).json({
-        ok: false,
-        mqtt: isMqttConnected() ? "connected" : "disconnected",
-        db: "down",
-        lake_db: "down",
-      });
+      dbOk = false;
     }
+    try {
+      lakeOk = await pingLake();
+    } catch {
+      lakeOk = false;
+    }
+    const ok = dbOk && lakeOk;
+    res.status(ok ? 200 : 503).json({
+      ok,
+      mqtt: isMqttConnected() ? "connected" : "disconnected",
+      db: dbOk ? "up" : "down",
+      lake_db: lakeOk ? "up" : "down",
+      lake_engine: "mongodb",
+      freshness_ms: config.freshnessMs,
+    });
   });
 
   app.get("/api/rooms", async (_req, res) => {

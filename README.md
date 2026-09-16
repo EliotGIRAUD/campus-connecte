@@ -73,7 +73,7 @@ docker compose down -v
 ## Structure
 
 ```
-backend/   API Express, client MQTT, Prisma/PostgreSQL (campus + campus_lake)
+backend/   API Express, client MQTT, PostgreSQL (API) + MongoDB (data lake)
 mobile/    Application Expo
 infra/     Kit Mosquitto + simulateur (non modifié)
 docs/      Architecture, décisions, plans et journaux J1–J4 (voir docs/repartition.md)

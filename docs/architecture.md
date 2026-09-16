@@ -6,7 +6,7 @@
 flowchart LR
     S["Simulateur fourni"] -->|"MQTT campus/v1"| M["Mosquitto"]
     M -->|"mqtt.js QoS 1"| B["Backend Express"]
-    B --> LAKE[("PostgreSQL campus_lake")]
+    B --> LAKE[("MongoDB campus_lake")]
     B --> PG[("PostgreSQL campus")]
     B -->|"REST GET /api"| A["Expo / React Native"]
 ```
@@ -16,7 +16,7 @@ flowchart LR
 | Capteur | Produit température, CO₂, état, disponibilité | Simulateur Python du kit |
 | Transport | Publication / abonnement, retained, Last Will | Mosquitto MQTT 3.1.1 |
 | Backend | Valide, identifie l’objet, persiste, expose l’API | Node.js, Express, mqtt.js, Zod |
-| Data lake | Tout message MQTT brut + outcome d’ingestion | PostgreSQL `campus_lake`, Prisma |
+| Data lake | Tout message MQTT brut, timestampé, sans borne | MongoDB `campus_lake` |
 | Stockage API | Dernier état + historique borné (`HISTORY_LIMIT`) | PostgreSQL `campus`, Prisma |
 | Mobile | Affiche mesures, cache local, états réseau distincts | React Native, Expo, AsyncStorage, NetInfo |
 
@@ -32,12 +32,12 @@ L’application interroge `GET /api/rooms` toutes les 3 secondes. Une mesure est
 
 ## Deux bases
 
-| Base | Rôle | Tables clés | Consommateur |
+| Base | Rôle | Contenu | Consommateur |
 |---|---|---|---|
-| `campus_lake` | Data lake — **tout** ce qui arrive | `RawMqttEvent` | audit, debug, futur analytics |
-| `campus` | Données **propres** pour le produit | `Device`, `Measurement` (+ J3 : users, commands) | `GET /api/*`, mobile |
+| `campus_lake` (MongoDB) | Data lake — **tout** ce qui arrive | collection `mqtt_events` (append-only) | audit, historique massif |
+| `campus` (PostgreSQL) | Données **propres** pour le produit | `Device`, `Measurement` (+ J3) | `GET /api/*`, mobile |
 
-Chaque message MQTT est d’abord écrit dans le lake (`recordRawMessage`), puis traité par les règles métier. L’API ne lit **jamais** le lake.
+Chaque message MQTT est d’abord **inséré** dans Mongo (`insertOne`, jamais d’update), puis traité par les règles métier. L’API ne lit **jamais** le lake.
 
 ## Persistance API (`campus`)
 
@@ -45,10 +45,11 @@ Chaque message MQTT est d’abord écrit dans le lake (`recordRawMessage`), puis
 - **`Device`** : projection du dernier état. Une mesure en retard est stockée mais ne fait pas reculer `lastObservedAt`.
 - **Borne** : après insertion, au plus `HISTORY_LIMIT` (200) mesures par objet (les plus récentes par `observedAt`).
 
-## Data lake (`campus_lake`)
+## Data lake (`campus_lake` / MongoDB)
 
-- **`RawMqttEvent`** : topic, payload brut, JSON parsé si possible, `outcome` (`ingested`, `rejected`, `duplicate`, `stale`, `unknown_device`, `ignored_topic`).
-- Pas de borne : conserve rejets et doublons pour analyse.
+- Collection **`mqtt_events`** : `topic`, `deviceId`, `messageKind`, `messageId`, `payloadRaw`, `payload`, `receivedAt`.
+- **Append-only** : pas de verrou « update après insert » ; adapté à un volume élevé.
+- Indexes : `receivedAt`, `(deviceId, receivedAt)`, `messageId` (sparse).
 
 ## Cache mobile
 
@@ -75,4 +76,4 @@ Les objets `sensor-001` à `sensor-003` restent les mêmes du topic MQTT jusqu�
 | `ALERT_CO2_PPM` | 1500 (prévu J4) |
 | `HISTORY_LIMIT` | 200 |
 
-Pourquoi PostgreSQL et un CQRS léger : [décision 002](decisions/002-architecture.md). Déduplication et cache : [décision 003](decisions/003-deduplication-cache.md). Deux bases lake/API : [décision 004](decisions/004-dual-database.md).
+Pourquoi PostgreSQL et un CQRS léger : [décision 002](decisions/002-architecture.md). Déduplication et cache : [décision 003](decisions/003-deduplication-cache.md). Lake Mongo + API Postgres : [décision 004](decisions/004-dual-database.md).

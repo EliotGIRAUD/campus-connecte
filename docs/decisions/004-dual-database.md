@@ -1,11 +1,11 @@
-# 004 — Deux bases PostgreSQL : data lake et API
+# 004 — Data lake MongoDB + base API PostgreSQL
 
-- **Problème :** l’API mobile a besoin de données **propres, triées et bornées** ; l’équipe veut aussi **conserver tout** ce qui arrive du broker (rejets, doublons, retards, payloads bruts) pour audit et analyse.
-- **Options :** une seule base avec tables brutes + tables métier ; deux moteurs (Postgres + Mongo/S3) ; **deux bases PostgreSQL** sur le même conteneur.
+- **Problème :** stocker **tout** le flux MQTT (historique massif, payloads variables) sans bloquer l’API sur des verrous / mises à jour ; servir au téléphone des données **propres et bornées**.
+- **Options :** Postgres lake + updates d’`outcome` ; Postgres JSONB append-only ; **MongoDB append-only** + Postgres API.
 - **Choix et compromis :**
-  - **`campus_lake`** (data lake) : table append-only `RawMqttEvent` — topic, payload brut/JSON, `outcome` (`ingested`, `rejected`, `duplicate`, `stale`, …). Pas de borne : tout est gardé.
-  - **`campus`** (API) : `Device` + `Measurement` — données validées, dédupliquées, historique borné (`HISTORY_LIMIT`). Seule cette base sert les `GET /api/*`.
-  - Même moteur PostgreSQL, deux Prisma schemas, deux URLs (`DATABASE_URL`, `LAKE_DATABASE_URL`).
-  - Flux : MQTT → **lake d’abord** → règles métier → API DB si propre.
-- **Vérification :** `GET /health` → `db: up`, `lake_db: up` ; messages MQTT visibles dans `RawMqttEvent` même si rejetés côté API.
-- **Limite :** pas de pipeline ETL séparé ; la projection API reste synchrone dans `ingest.ts`. Pas d’endpoint public sur le lake (J3+).
+  - **`campus_lake` (MongoDB)** : collection `mqtt_events` — un document par message (`topic`, `payload`, `receivedAt`, `deviceId`, `messageId`). **Insert only**, jamais d’`update`. Pas de borne.
+  - **`campus` (PostgreSQL)** : `Device` + `Measurement` — validé, dédupliqué, historique borné. Seule source des `GET /api/*`.
+  - Flux : MQTT → **insert Mongo** → règles métier → Postgres si propre.
+  - Driver natif `mongodb` (pas Prisma sur le lake) : schéma souple, écritures concurrentes sans row-lock SQL.
+- **Vérification :** `GET /health` → `db: up`, `lake_db: up`, `lake_engine: mongodb` ; `mongosh campus_lake --eval 'db.mqtt_events.countDocuments()'`.
+- **Limite :** pas d’auth Mongo en local (Compose pédagogique) ; pas d’endpoint public sur le lake ; échec lake loggé, l’API continue.

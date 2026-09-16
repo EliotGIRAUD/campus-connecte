@@ -9,7 +9,7 @@ import {
   stateSchema,
   telemetrySchema,
 } from "./contract";
-import { recordRawMessage, setLakeOutcome } from "./lake";
+import { recordRawMessage } from "./lake";
 
 /** Keep at most HISTORY_LIMIT measurements per device (newest by observedAt). */
 async function trimHistory(deviceId: string): Promise<void> {
@@ -36,7 +36,8 @@ function parseJson(raw: Buffer): unknown {
 }
 
 export async function handleMqttMessage(topic: string, payload: Buffer): Promise<void> {
-  const lakeEventId = await recordRawMessage(topic, payload);
+  // Append-only lake write (MongoDB) — never blocks business rules on update/lock.
+  await recordRawMessage(topic, payload);
 
   const parsedTopic = parseTopic(topic);
   if (!parsedTopic) {
@@ -48,32 +49,26 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
   try {
     body = parseJson(payload);
   } catch (error) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn({ topic, err: error }, "payload json invalide");
     return;
   }
 
   if (parsedTopic.kind === "telemetry") {
-    await ingestTelemetry(parsedTopic.deviceId, body, lakeEventId);
+    await ingestTelemetry(parsedTopic.deviceId, body);
     return;
   }
   if (parsedTopic.kind === "availability") {
-    await ingestAvailability(parsedTopic.deviceId, body, lakeEventId);
+    await ingestAvailability(parsedTopic.deviceId, body);
     return;
   }
   if (parsedTopic.kind === "state") {
-    await ingestState(parsedTopic.deviceId, body, lakeEventId);
+    await ingestState(parsedTopic.deviceId, body);
   }
 }
 
-async function ingestTelemetry(
-  topicDeviceId: string,
-  body: unknown,
-  lakeEventId: string | null,
-): Promise<void> {
+async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<void> {
   const parsed = telemetrySchema.safeParse(body);
   if (!parsed.success) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn(
       { deviceId: topicDeviceId, issues: parsed.error.issues, body },
       "mesure rejetee",
@@ -83,7 +78,6 @@ async function ingestTelemetry(
 
   const message = parsed.data;
   if (message.device_id !== topicDeviceId) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn(
       { topicDeviceId, payloadDeviceId: message.device_id, messageId: message.message_id },
       "mesure rejetee: device_id incoherent avec le topic",
@@ -93,7 +87,6 @@ async function ingestTelemetry(
 
   const device = await prisma.device.findUnique({ where: { id: topicDeviceId } });
   if (!device) {
-    await setLakeOutcome(lakeEventId, "unknown_device");
     logger.warn({ deviceId: topicDeviceId, messageId: message.message_id }, "objet inconnu du registre");
     return;
   }
@@ -117,7 +110,6 @@ async function ingestTelemetry(
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      await setLakeOutcome(lakeEventId, "duplicate");
       logger.info({ messageId: message.message_id, deviceId: topicDeviceId }, "doublon ignore");
       return;
     }
@@ -127,7 +119,6 @@ async function ingestTelemetry(
   await trimHistory(topicDeviceId);
 
   if (!shouldUpdateLatest(device.lastObservedAt, observedAt)) {
-    await setLakeOutcome(lakeEventId, "stale");
     logger.info(
       {
         deviceId: topicDeviceId,
@@ -153,7 +144,6 @@ async function ingestTelemetry(
     },
   });
 
-  await setLakeOutcome(lakeEventId, "ingested");
   logger.info(
     {
       deviceId: topicDeviceId,
@@ -166,19 +156,13 @@ async function ingestTelemetry(
   );
 }
 
-async function ingestAvailability(
-  topicDeviceId: string,
-  body: unknown,
-  lakeEventId: string | null,
-): Promise<void> {
+async function ingestAvailability(topicDeviceId: string, body: unknown): Promise<void> {
   const parsed = availabilitySchema.safeParse(body);
   if (!parsed.success) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn({ deviceId: topicDeviceId, issues: parsed.error.issues, body }, "disponibilite rejetee");
     return;
   }
   if (parsed.data.device_id !== topicDeviceId) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn({ topicDeviceId, payloadDeviceId: parsed.data.device_id }, "disponibilite incoherente");
     return;
   }
@@ -192,26 +176,19 @@ async function ingestAvailability(
       availabilityAt: reportedAt,
     },
   });
-  await setLakeOutcome(lakeEventId, "ingested");
   logger.info(
     { deviceId: topicDeviceId, status: parsed.data.status, reason: parsed.data.reason },
     "disponibilite mise a jour",
   );
 }
 
-async function ingestState(
-  topicDeviceId: string,
-  body: unknown,
-  lakeEventId: string | null,
-): Promise<void> {
+async function ingestState(topicDeviceId: string, body: unknown): Promise<void> {
   const parsed = stateSchema.safeParse(body);
   if (!parsed.success) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn({ deviceId: topicDeviceId, issues: parsed.error.issues, body }, "etat rejete");
     return;
   }
   if (parsed.data.device_id !== topicDeviceId) {
-    await setLakeOutcome(lakeEventId, "rejected");
     logger.warn({ topicDeviceId, payloadDeviceId: parsed.data.device_id }, "etat incoherent");
     return;
   }
@@ -220,7 +197,6 @@ async function ingestState(
     where: { id: topicDeviceId },
     data: { ventilation: parsed.data.ventilation },
   });
-  await setLakeOutcome(lakeEventId, "ingested");
   logger.info(
     { deviceId: topicDeviceId, ventilation: parsed.data.ventilation, bootId: parsed.data.boot_id },
     "etat ventilation mis a jour",

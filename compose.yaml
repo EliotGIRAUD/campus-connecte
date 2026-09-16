@@ -71,9 +71,21 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
-      - ./backend/docker/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U campus -d campus"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 4s
       retries: 12
@@ -84,7 +96,8 @@ services:
     environment:
       PORT: 3000
       DATABASE_URL: postgresql://campus:campus@postgres:5432/campus
-      LAKE_DATABASE_URL: postgresql://campus:campus@postgres:5432/campus_lake
+      LAKE_MONGO_URL: mongodb://mongo:27017
+      LAKE_MONGO_DB: campus_lake
       MQTT_URL: mqtt://mosquitto:1883
       MQTT_USER: backend
       MQTT_PASSWORD: ${BACKEND_PASSWORD:-backend-demo}
@@ -97,8 +110,11 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   broker-data:
   pg-data:
+  mongo-data:
