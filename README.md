@@ -92,5 +92,5 @@ backend/         API Express, client MQTT, PostgreSQL (API) + MongoDB (data lake
 mobile/          Application Expo
 infra/           Kit Mosquitto + simulateur (non modifié)
 observability/   Loki, Promtail, Grafana (provisioning)
-docs/            Architecture, décisions, journaux J1–J4 (voir docs/repartition.md)
+docs/            Architecture, décisions, journaux J1–J5 (voir docs/repartition.md)
 ```
