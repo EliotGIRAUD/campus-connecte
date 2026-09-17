@@ -9,7 +9,9 @@ export const config = {
     password: process.env.MQTT_PASSWORD ?? "backend-demo",
   },
   freshnessMs: Number(process.env.FRESHNESS_MS ?? 10_000),
+  /** Reserved for J4 — command ACK timeout (unused until command path lands). */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS ?? 15_000),
+  /** Reserved for J5 — CO₂ alert rule / hysteresis (unused until alert product lands). */
   alertCo2Ppm: Number(process.env.ALERT_CO2_PPM ?? 1500),
   historyLimit: Number(process.env.HISTORY_LIMIT ?? 200),
   averageWindowMs: Number(process.env.AVERAGE_WINDOW_MS ?? 10 * 60 * 1000),

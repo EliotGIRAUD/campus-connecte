@@ -36,7 +36,9 @@ Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’h
 
 Topics consommés par le backend : `telemetry`, `state`, `availability` (wildcard `+` sur le device).
 
-**Validation avant le cœur métier :** JSON parseable → schéma Zod → `device_id` == segment topic → device connu du registre. Sinon `telemetry.rejected` (ou équivalent) et **pas** d’écriture PostgreSQL métier.
+**Validation avant le cœur métier :** JSON parseable → schéma Zod (contrat + bornes métier) → `device_id` == segment topic → device connu du registre → `observed_at` pas trop dans le futur. Sinon `telemetry.rejected` (ou équivalent) et **pas** d’écriture PostgreSQL métier. Le lake Mongo peut quand même conserver le brut.
+
+**Autorité salle :** le registre `Device.roomId` (catalogue) fait foi pour l’API et les écritures `Measurement` ; un `room_id` payload divergent est logué (`telemetry.room_mismatch`) mais n’affecte pas l’affectation produit. Détail : [décision 009](decisions/009-business-validation-room-concurrency.md).
 
 ACL Mosquitto : comptes `simulator`, `backend`, `teacher`. Détail : [décision 006](decisions/006-device-identity.md).
 
@@ -56,9 +58,13 @@ La disponibilité MQTT (`online` / `offline`, LWT) est **distincte** : un objet 
 |---|---|---|
 | Mesure valide | Insert `Measurement` + éventuelle MAJ `Device` | `telemetry.ingested` |
 | Doublon `message_id` | Ignoré (contrainte unique) | `telemetry.duplicate` |
-| `observed_at` plus ancien que le latest | Conservé en historique, latest inchangé | `telemetry.stale_kept` |
+| `observed_at` plus ancien que le latest (ou course perdue) | Conservé en historique, latest inchangé | `telemetry.stale_kept` |
+| Hors plage métier / `observed_at` futur | Rejet métier | `telemetry.rejected` |
+| `room_id` payload ≠ registre | Log ; écriture avec `Device.roomId` | `telemetry.room_mismatch` |
 | Schéma / JSON / mismatch topic | Rejet, pas de crash | `telemetry.rejected` |
 | Broker coupé | Reconnexion auto | `mqtt.disconnected` → `mqtt.connected` |
+
+La MAJ du latest est **conditionnelle** (`lastObservedAt <= incoming`) pour rester correcte sous traitements concurrents.
 
 ## Deux bases
 
@@ -89,7 +95,7 @@ Chaque message MQTT est d’abord **inséré** dans Mongo (`insertOne`, jamais d
 
 ## Cache mobile
 
-Après une lecture réussie, les salles sont sauvées dans AsyncStorage avec `cachedAt`. Hors ligne (NetInfo), l’app affiche ce cache. Trois bandeaux : téléphone hors ligne / donnée ancienne / objet hors ligne.
+Après une lecture réussie, les salles sont sauvées dans AsyncStorage avec `cachedAt`. Hors ligne (NetInfo), l’app affiche ce cache. La **fraîcheur** est recalculée localement depuis `observed_at` (même règle 10 s que l’API) : le snapshot serveur ne reste pas figé. Trois bandeaux : téléphone hors ligne / donnée ancienne / objet hors ligne.
 
 ## Indisponibilité broker
 
@@ -107,4 +113,4 @@ Session MQTT `clean: true`, abonnements QoS 1. Coupure → logs `mqtt.*` → rep
 | `AVERAGE_RETENTION_MS` | 2592000000 (30 j) |
 | `LAKE_TTL_SECONDS` | 604800 (7 j) |
 
-Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md).
+Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md).

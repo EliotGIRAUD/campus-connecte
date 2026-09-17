@@ -44,7 +44,7 @@ Superviser un campus simulé : mesures toutes les 2 secondes, doublons MQTT poss
 **CQRS léger (pas un framework)**
 
 - **Query (lecture)** : `GET /api/rooms`, `GET /api/devices/:id`. Réponse immédiate. Relire ne change rien.
-- **Command / écriture** : ingestion MQTT aujourd’hui ; `set_ventilation` à partir de J3. Asynchrone, timeout 15 s, parfois aucune réponse.
+- **Command / écriture** : ingestion MQTT aujourd’hui ; `set_ventilation` prévu en **J4** (ACK, timeout, idempotence). Asynchrone, timeout 15 s, parfois aucune réponse.
 - **`Measurement`** : journal. On **ajoute** une mesure valide, on ne la réécrit pas.
 - **`Device`** : vue actuelle (projection). Température, CO₂, ventilation, disponibilité : ce que le téléphone affiche sans relire tout l’historique.
 - Un message **en retard** est gardé dans l’historique, mais **n’écrase pas** l’état courant.
@@ -67,4 +67,4 @@ Comparaison SQLite / PostgreSQL / Mongo et CRUD / CQRS / event sourcing. Le cont
 
 - Une seule base API PostgreSQL à l’origine ; le data lake est MongoDB append-only ([004](004-dual-database.md)).
 - Pas de bus d’événements ni de replay.
-- Commandes, auth et alertes : J3 / J4. Le schéma CQRS est déjà là pour les accueillir : un `GET` ne publiera pas de commande MQTT.
+- Commandes = J4 ; auth et alertes = J4 / J5 selon le plan. Le schéma CQRS est déjà là pour les accueillir : un `GET` ne publiera pas de commande MQTT.

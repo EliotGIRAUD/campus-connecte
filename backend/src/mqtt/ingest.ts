@@ -4,6 +4,7 @@ import { prisma } from "../db";
 import { logEvent } from "../logger";
 import {
   availabilitySchema,
+  isObservedAtTooFarInFuture,
   parseTopic,
   shouldUpdateLatest,
   stateSchema,
@@ -92,6 +93,9 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
 async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: string): Promise<void> {
   const parsed = telemetrySchema.safeParse(body);
   if (!parsed.success) {
+    const rangeIssue = parsed.error.issues.some(
+      (issue) => issue.code === "too_small" || issue.code === "too_big",
+    );
     logEvent(
       "warn",
       {
@@ -99,7 +103,7 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: stri
         deviceId: topicDeviceId,
         topic,
         status: "rejected",
-        reason: "schema_invalid",
+        reason: rangeIssue ? "out_of_range" : "schema_invalid",
         issues: parsed.error.issues,
       },
       "mesure rejetee",
@@ -145,12 +149,48 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: stri
   const observedAt = new Date(message.observed_at);
   const receivedAt = new Date();
 
+  if (isObservedAtTooFarInFuture(observedAt, receivedAt)) {
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.rejected",
+        deviceId: topicDeviceId,
+        eventId: message.message_id,
+        topic,
+        status: "rejected",
+        reason: "observed_at_in_future",
+        observedAt: message.observed_at,
+        receivedAt: receivedAt.toISOString(),
+      },
+      "mesure rejetee: observed_at dans le futur",
+    );
+    return;
+  }
+
+  // Registry wins for product room assignment; payload room_id is advisory.
+  const registryRoomId = device.roomId;
+  if (message.room_id !== registryRoomId) {
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.room_mismatch",
+        deviceId: topicDeviceId,
+        eventId: message.message_id,
+        topic,
+        status: "mismatch",
+        payloadRoomId: message.room_id,
+        registryRoomId,
+      },
+      "room_id payload incoherent avec le registre",
+    );
+  }
+
   try {
     await prisma.measurement.create({
       data: {
         messageId: message.message_id,
         deviceId: topicDeviceId,
-        roomId: message.room_id,
+        roomId: registryRoomId,
         observedAt,
         receivedAt,
         temperature: message.temperature.value,
@@ -180,7 +220,7 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: stri
 
   await recordAverage({
     deviceId: topicDeviceId,
-    roomId: message.room_id,
+    roomId: registryRoomId,
     observedAt,
     temperature: message.temperature.value,
     temperatureUnit: message.temperature.unit,
@@ -208,8 +248,12 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: stri
     return;
   }
 
-  await prisma.device.update({
-    where: { id: topicDeviceId },
+  // Atomic vs concurrent handlers: only advance latest if still older-or-equal.
+  const updated = await prisma.device.updateMany({
+    where: {
+      id: topicDeviceId,
+      OR: [{ lastObservedAt: null }, { lastObservedAt: { lte: observedAt } }],
+    },
     data: {
       lastMessageId: message.message_id,
       lastObservedAt: observedAt,
@@ -220,6 +264,23 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: stri
       co2Unit: message.co2.unit,
     },
   });
+
+  if (updated.count === 0) {
+    logEvent(
+      "info",
+      {
+        eventType: "telemetry.stale_kept",
+        deviceId: topicDeviceId,
+        eventId: message.message_id,
+        topic,
+        status: "kept",
+        reason: "lost_race_or_older_than_latest",
+        observedAt: message.observed_at,
+      },
+      "mesure ancienne conservee",
+    );
+    return;
+  }
 
   logEvent(
     "info",

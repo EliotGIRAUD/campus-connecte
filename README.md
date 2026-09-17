@@ -52,13 +52,13 @@ npx expo start
 
 Adresse de l’API selon le terminal :
 
-| Terminal | `EXPO_PUBLIC_API_URL` |
-|---|---|
-| Expo Web / simulateur iOS | `http://localhost:3000` |
-| Émulateur Android | `http://10.0.2.2:3000` |
-| Téléphone physique | `http://IP_LAN_DU_PC:3000` |
+| Priorité | Source | Exemple |
+|---|---|---|
+| 1 | `EXPO_PUBLIC_API_URL` si défini | `http://10.0.2.2:3000` (émulateur Android) |
+| 2 | Hôte LAN détecté via Expo | `http://192.168.x.x:3000` (téléphone physique) |
+| 3 | Défaut | `http://localhost:3000` (Expo Web / simulateur iOS) |
 
-`localhost` sur un téléphone désigne le téléphone, pas l’ordinateur.
+`localhost` sur un téléphone désigne le téléphone, pas l’ordinateur. Sur un émulateur Android, définir explicitement `EXPO_PUBLIC_API_URL=http://10.0.2.2:3000`.
 
 ## Arrêt
 

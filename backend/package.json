@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/mqtt/contract.test.ts src/mqtt/averages.test.ts",
+    "test": "tsx --test src/mqtt/contract.test.ts src/mqtt/averages.test.ts src/mqtt/concurrency.model.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy"
   },

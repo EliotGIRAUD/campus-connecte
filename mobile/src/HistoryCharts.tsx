@@ -3,9 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LineChart, type ChartPoint } from "./LineChart";
 import { useCampusStore, type ChartMetric, type ChartPeriod } from "./store";
 import type { DeviceHistory } from "./api";
+import { CO2_HIGH_PPM } from "./thresholds";
 import { colors } from "./theme";
 
-export const ALERT_CO2_PPM = 1500;
 const AVERAGE_WINDOW_MS = 10 * 60 * 1000;
 
 type Period = ChartPeriod;
@@ -172,7 +172,7 @@ export function HistoryCharts() {
         formatY={isCo2 ? formatCo2 : formatTemp}
         minSpan={isCo2 ? 200 : 2}
         caption={coverageCaption(period, points)}
-        threshold={isCo2 ? { value: ALERT_CO2_PPM, label: `Seuil ${ALERT_CO2_PPM}` } : undefined}
+        threshold={isCo2 ? { value: CO2_HIGH_PPM, label: `Seuil ${CO2_HIGH_PPM}` } : undefined}
         emptyHint={
           period === "live"
             ? "Aucune mesure brute pour le moment."

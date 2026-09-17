@@ -69,6 +69,8 @@ export type HistoryDaily = {
   co2: Quantity;
 };
 
+const FETCH_TIMEOUT_MS = 8_000;
+
 function lanHostFromExpo(): string | null {
   const candidates = [Constants.expoConfig?.hostUri, Constants.linkingUri];
   for (const value of candidates) {
@@ -83,27 +85,42 @@ function lanHostFromExpo(): string | null {
   return null;
 }
 
+/** Prefer explicit env (Android emulator 10.0.2.2, LAN override), then Expo host, then localhost. */
 export function getApiUrl(): string {
-  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, "");
+  }
   const lanHost = lanHostFromExpo();
   if (lanHost) {
     return `http://${lanHost}:3000`;
   }
-  return fromEnv ?? "http://localhost:3000";
+  return "http://localhost:3000";
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${getApiUrl()}${path}`, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Délai dépassé");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchRooms(): Promise<RoomsResponse> {
-  const response = await fetch(`${getApiUrl()}/api/rooms`);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  return response.json() as Promise<RoomsResponse>;
+  return fetchJson<RoomsResponse>("/api/rooms");
 }
 
 export async function fetchDeviceHistory(deviceId: string): Promise<DeviceHistory> {
-  const response = await fetch(`${getApiUrl()}/api/devices/${encodeURIComponent(deviceId)}/history`);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  return response.json() as Promise<DeviceHistory>;
+  return fetchJson<DeviceHistory>(`/api/devices/${encodeURIComponent(deviceId)}/history`);
 }

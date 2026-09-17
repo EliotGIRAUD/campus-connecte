@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   freshnessOf,
+  isObservedAtTooFarInFuture,
   parseTopic,
   shouldUpdateLatest,
   telemetrySchema,
@@ -40,6 +41,35 @@ describe("contrat mqtt", () => {
       co2: { value: "invalide", unit: "ppm" },
     });
     assert.equal(parsed.success, false);
+  });
+
+  it("rejette une temperature ou un CO2 hors plage metier", () => {
+    const cold = telemetrySchema.safeParse({
+      schema_version: 1,
+      message_id: "abc-cold",
+      device_id: "sensor-001",
+      room_id: "salle-203",
+      observed_at: "2026-09-15T08:00:00.000Z",
+      temperature: { value: -300, unit: "°C" },
+      co2: { value: 900, unit: "ppm" },
+    });
+    const toxic = telemetrySchema.safeParse({
+      schema_version: 1,
+      message_id: "abc-toxic",
+      device_id: "sensor-001",
+      room_id: "salle-203",
+      observed_at: "2026-09-15T08:00:00.000Z",
+      temperature: { value: 22, unit: "°C" },
+      co2: { value: 99999, unit: "ppm" },
+    });
+    assert.equal(cold.success, false);
+    assert.equal(toxic.success, false);
+  });
+
+  it("detecte un observed_at trop loin dans le futur", () => {
+    const now = new Date("2026-09-17T12:00:00.000Z");
+    assert.equal(isObservedAtTooFarInFuture(new Date("2026-09-17T12:00:30.000Z"), now), false);
+    assert.equal(isObservedAtTooFarInFuture(new Date("2099-01-01T00:00:00.000Z"), now), true);
   });
 
   it("ne remplace pas un etat recent par une mesure plus ancienne", () => {
