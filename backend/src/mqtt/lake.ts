@@ -1,5 +1,5 @@
 import { lakeEvents } from "../lake-db";
-import { logger } from "../logger";
+import { logEvent } from "../logger";
 import { parseTopic } from "./contract";
 
 function parsePayload(raw: Buffer): unknown | undefined {
@@ -38,6 +38,17 @@ export async function recordRawMessage(topic: string, payload: Buffer): Promise<
       receivedAt: new Date(),
     });
   } catch (error) {
-    logger.warn({ topic, err: error }, "echec ecriture data lake mongodb");
+    logEvent(
+      "warn",
+      {
+        eventType: "lake.write_failed",
+        topic,
+        deviceId: parsedTopic?.deviceId ?? undefined,
+        eventId: extractMessageId(parsed) ?? undefined,
+        status: "error",
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      "echec ecriture data lake mongodb",
+    );
   }
 }

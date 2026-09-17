@@ -1,7 +1,7 @@
 import { CATALOG, config } from "./config";
 import { prisma } from "./db";
 import { connectLake } from "./lake-db";
-import { logger } from "./logger";
+import { logEvent } from "./logger";
 import { createApp } from "./api/app";
 import { connectMqtt } from "./mqtt/client";
 
@@ -21,11 +21,23 @@ async function main(): Promise<void> {
   connectMqtt();
   const app = createApp();
   app.listen(config.port, "0.0.0.0", () => {
-    logger.info({ port: config.port }, "api en ecoute");
+    logEvent(
+      "info",
+      { eventType: "api.listening", status: "ok", port: config.port },
+      "api en ecoute",
+    );
   });
 }
 
 void main().catch((error) => {
-  logger.fatal({ err: error }, "demarrage impossible");
+  logEvent(
+    "error",
+    {
+      eventType: "api.startup_failed",
+      status: "error",
+      reason: error instanceof Error ? error.message : String(error),
+    },
+    "demarrage impossible",
+  );
   process.exit(1);
 });

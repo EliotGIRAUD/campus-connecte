@@ -1,6 +1,6 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
 import { config } from "./config";
-import { logger } from "./logger";
+import { logEvent } from "./logger";
 
 export type LakeEvent = {
   topic: string;
@@ -36,8 +36,14 @@ export async function connectLake(): Promise<void> {
     { receivedAt: 1 },
     { name: "mqtt_events_ttl", expireAfterSeconds: config.lakeTtlSeconds },
   );
-  logger.info(
-    { db: config.lakeMongoDb, ttlSeconds: config.lakeTtlSeconds },
+  logEvent(
+    "info",
+    {
+      eventType: "lake.connected",
+      status: "ok",
+      db: config.lakeMongoDb,
+      ttlSeconds: config.lakeTtlSeconds,
+    },
     "data lake mongodb connecte",
   );
 }

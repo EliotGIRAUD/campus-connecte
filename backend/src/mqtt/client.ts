@@ -1,6 +1,6 @@
 import mqtt, { type MqttClient } from "mqtt";
 import { config } from "../config";
-import { logger } from "../logger";
+import { logEvent } from "../logger";
 import { handleMqttMessage } from "./ingest";
 
 let client: MqttClient | null = null;
@@ -28,33 +28,71 @@ export function connectMqtt(): MqttClient {
 
   client.on("connect", () => {
     connected = true;
-    logger.info({ url: config.mqtt.url }, "mqtt connecte");
+    logEvent(
+      "info",
+      { eventType: "mqtt.connected", status: "ok", topic: config.mqtt.url },
+      "mqtt connecte",
+    );
     client?.subscribe(TOPICS, { qos: 1 }, (error) => {
       if (error) {
-        logger.error({ err: error }, "abonnement mqtt echoue");
+        logEvent(
+          "error",
+          {
+            eventType: "mqtt.subscribe_failed",
+            status: "error",
+            reason: error.message,
+            topics: TOPICS,
+          },
+          "abonnement mqtt echoue",
+        );
         return;
       }
-      logger.info({ topics: TOPICS }, "abonnements mqtt actifs");
+      logEvent(
+        "info",
+        { eventType: "mqtt.subscribed", status: "ok", topics: TOPICS },
+        "abonnements mqtt actifs",
+      );
     });
   });
 
   client.on("reconnect", () => {
     connected = false;
-    logger.warn("mqtt reconnexion");
+    logEvent(
+      "warn",
+      { eventType: "mqtt.reconnecting", status: "degraded", reason: "reconnect_attempt" },
+      "mqtt reconnexion",
+    );
   });
 
   client.on("close", () => {
     connected = false;
-    logger.warn("mqtt deconnecte");
+    logEvent(
+      "warn",
+      { eventType: "mqtt.disconnected", status: "down", reason: "connection_closed" },
+      "mqtt deconnecte",
+    );
   });
 
   client.on("error", (error) => {
-    logger.error({ err: error }, "erreur mqtt");
+    logEvent(
+      "error",
+      { eventType: "mqtt.error", status: "error", reason: error.message },
+      "erreur mqtt",
+    );
   });
 
   client.on("message", (topic, payload) => {
     void handleMqttMessage(topic, payload).catch((error) => {
-      logger.error({ err: error, topic }, "traitement mqtt echoue");
+      logEvent(
+        "error",
+        {
+          eventType: "mqtt.handle_failed",
+          topic,
+          status: "error",
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        "traitement mqtt echoue",
+      );
     });
   });
 

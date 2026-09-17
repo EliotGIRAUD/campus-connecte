@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { config } from "../config";
 import { prisma } from "../db";
-import { logger } from "../logger";
+import { logEvent } from "../logger";
 import {
   availabilitySchema,
   parseTopic,
@@ -26,8 +26,15 @@ async function trimHistory(deviceId: string): Promise<void> {
   const result = await prisma.measurement.deleteMany({
     where: { messageId: { in: excess.map((row) => row.messageId) } },
   });
-  logger.info(
-    { deviceId, deleted: result.count, historyLimit: config.historyLimit },
+  logEvent(
+    "info",
+    {
+      eventType: "history.trimmed",
+      deviceId,
+      deleted: result.count,
+      historyLimit: config.historyLimit,
+      status: "ok",
+    },
     "historique borne",
   );
 }
@@ -42,7 +49,11 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
 
   const parsedTopic = parseTopic(topic);
   if (!parsedTopic) {
-    logger.warn({ topic }, "topic mqtt ignore");
+    logEvent(
+      "warn",
+      { eventType: "mqtt.topic_ignored", topic, status: "rejected", reason: "topic_unrecognized" },
+      "topic mqtt ignore",
+    );
     return;
   }
 
@@ -50,28 +61,47 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
   try {
     body = parseJson(payload);
   } catch (error) {
-    logger.warn({ topic, err: error }, "payload json invalide");
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.rejected",
+        deviceId: parsedTopic.deviceId,
+        topic,
+        status: "rejected",
+        reason: "invalid_json",
+        err: error instanceof Error ? error.message : String(error),
+      },
+      "payload json invalide",
+    );
     return;
   }
 
   if (parsedTopic.kind === "telemetry") {
-    await ingestTelemetry(parsedTopic.deviceId, body);
+    await ingestTelemetry(parsedTopic.deviceId, body, topic);
     return;
   }
   if (parsedTopic.kind === "availability") {
-    await ingestAvailability(parsedTopic.deviceId, body);
+    await ingestAvailability(parsedTopic.deviceId, body, topic);
     return;
   }
   if (parsedTopic.kind === "state") {
-    await ingestState(parsedTopic.deviceId, body);
+    await ingestState(parsedTopic.deviceId, body, topic);
   }
 }
 
-async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<void> {
+async function ingestTelemetry(topicDeviceId: string, body: unknown, topic: string): Promise<void> {
   const parsed = telemetrySchema.safeParse(body);
   if (!parsed.success) {
-    logger.warn(
-      { deviceId: topicDeviceId, issues: parsed.error.issues, body },
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "schema_invalid",
+        issues: parsed.error.issues,
+      },
       "mesure rejetee",
     );
     return;
@@ -79,8 +109,17 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
 
   const message = parsed.data;
   if (message.device_id !== topicDeviceId) {
-    logger.warn(
-      { topicDeviceId, payloadDeviceId: message.device_id, messageId: message.message_id },
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.rejected",
+        deviceId: topicDeviceId,
+        eventId: message.message_id,
+        topic,
+        status: "rejected",
+        reason: "device_id_mismatch",
+        payloadDeviceId: message.device_id,
+      },
       "mesure rejetee: device_id incoherent avec le topic",
     );
     return;
@@ -88,7 +127,18 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
 
   const device = await prisma.device.findUnique({ where: { id: topicDeviceId } });
   if (!device) {
-    logger.warn({ deviceId: topicDeviceId, messageId: message.message_id }, "objet inconnu du registre");
+    logEvent(
+      "warn",
+      {
+        eventType: "telemetry.rejected",
+        deviceId: topicDeviceId,
+        eventId: message.message_id,
+        topic,
+        status: "rejected",
+        reason: "unknown_device",
+      },
+      "objet inconnu du registre",
+    );
     return;
   }
 
@@ -111,7 +161,18 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      logger.info({ messageId: message.message_id, deviceId: topicDeviceId }, "doublon ignore");
+      logEvent(
+        "info",
+        {
+          eventType: "telemetry.duplicate",
+          deviceId: topicDeviceId,
+          eventId: message.message_id,
+          topic,
+          status: "ignored",
+          reason: "duplicate_message_id",
+        },
+        "doublon ignore",
+      );
       return;
     }
     throw error;
@@ -130,12 +191,17 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
   await purgeOldAverages();
 
   if (!shouldUpdateLatest(device.lastObservedAt, observedAt)) {
-    logger.info(
+    logEvent(
+      "info",
       {
+        eventType: "telemetry.stale_kept",
         deviceId: topicDeviceId,
-        messageId: message.message_id,
+        eventId: message.message_id,
+        topic,
+        status: "kept",
+        reason: "older_than_latest",
         observedAt: message.observed_at,
-        currentObservedAt: device.lastObservedAt,
+        currentObservedAt: device.lastObservedAt?.toISOString() ?? null,
       },
       "mesure ancienne conservee",
     );
@@ -155,10 +221,14 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
     },
   });
 
-  logger.info(
+  logEvent(
+    "info",
     {
+      eventType: "telemetry.ingested",
       deviceId: topicDeviceId,
-      messageId: message.message_id,
+      eventId: message.message_id,
+      topic,
+      status: "ok",
       observedAt: message.observed_at,
       temperature: message.temperature.value,
       co2: message.co2.value,
@@ -167,14 +237,40 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
   );
 }
 
-async function ingestAvailability(topicDeviceId: string, body: unknown): Promise<void> {
+async function ingestAvailability(
+  topicDeviceId: string,
+  body: unknown,
+  topic: string,
+): Promise<void> {
   const parsed = availabilitySchema.safeParse(body);
   if (!parsed.success) {
-    logger.warn({ deviceId: topicDeviceId, issues: parsed.error.issues, body }, "disponibilite rejetee");
+    logEvent(
+      "warn",
+      {
+        eventType: "availability.rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "schema_invalid",
+        issues: parsed.error.issues,
+      },
+      "disponibilite rejetee",
+    );
     return;
   }
   if (parsed.data.device_id !== topicDeviceId) {
-    logger.warn({ topicDeviceId, payloadDeviceId: parsed.data.device_id }, "disponibilite incoherente");
+    logEvent(
+      "warn",
+      {
+        eventType: "availability.rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "device_id_mismatch",
+        payloadDeviceId: parsed.data.device_id,
+      },
+      "disponibilite incoherente",
+    );
     return;
   }
 
@@ -187,20 +283,49 @@ async function ingestAvailability(topicDeviceId: string, body: unknown): Promise
       availabilityAt: reportedAt,
     },
   });
-  logger.info(
-    { deviceId: topicDeviceId, status: parsed.data.status, reason: parsed.data.reason },
+  logEvent(
+    "info",
+    {
+      eventType: "availability.updated",
+      deviceId: topicDeviceId,
+      topic,
+      status: parsed.data.status,
+      reason: parsed.data.reason,
+    },
     "disponibilite mise a jour",
   );
 }
 
-async function ingestState(topicDeviceId: string, body: unknown): Promise<void> {
+async function ingestState(topicDeviceId: string, body: unknown, topic: string): Promise<void> {
   const parsed = stateSchema.safeParse(body);
   if (!parsed.success) {
-    logger.warn({ deviceId: topicDeviceId, issues: parsed.error.issues, body }, "etat rejete");
+    logEvent(
+      "warn",
+      {
+        eventType: "state.rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "schema_invalid",
+        issues: parsed.error.issues,
+      },
+      "etat rejete",
+    );
     return;
   }
   if (parsed.data.device_id !== topicDeviceId) {
-    logger.warn({ topicDeviceId, payloadDeviceId: parsed.data.device_id }, "etat incoherent");
+    logEvent(
+      "warn",
+      {
+        eventType: "state.rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "device_id_mismatch",
+        payloadDeviceId: parsed.data.device_id,
+      },
+      "etat incoherent",
+    );
     return;
   }
 
@@ -208,8 +333,16 @@ async function ingestState(topicDeviceId: string, body: unknown): Promise<void> 
     where: { id: topicDeviceId },
     data: { ventilation: parsed.data.ventilation },
   });
-  logger.info(
-    { deviceId: topicDeviceId, ventilation: parsed.data.ventilation, bootId: parsed.data.boot_id },
+  logEvent(
+    "info",
+    {
+      eventType: "state.updated",
+      deviceId: topicDeviceId,
+      topic,
+      status: "ok",
+      ventilation: parsed.data.ventilation,
+      bootId: parsed.data.boot_id,
+    },
     "etat ventilation mis a jour",
   );
 }

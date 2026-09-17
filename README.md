@@ -8,7 +8,7 @@ Kit simulateur : [MdsIoTMobile](https://github.com/LargeGaultier/MdsIoTMobile) v
 
 - Docker Desktop (conteneurs Linux) avec `docker compose`
 - Node.js 22+
-- Un émulateur Android, un téléphone, ou Expo Web pour la démo J1
+- Un émulateur Android, un téléphone, ou Expo Web pour la démo
 
 ## Démarrage
 
@@ -30,6 +30,17 @@ Vérifier l’API :
 curl http://localhost:3000/health
 curl http://localhost:3000/api/rooms
 ```
+
+### Observabilité (J3)
+
+| Service | URL |
+|---|---|
+| Grafana | http://localhost:3001 (Viewer anonyme ; admin / `campus-demo`) |
+| Loki | http://localhost:3100 |
+| **Dashboard ops** | http://localhost:3001/d/campus-ops |
+| **Dashboard recettes J3** | http://localhost:3001/d/campus-j3-recettes |
+
+Requêtes LogQL : [observability/README.md](observability/README.md).
 
 Application mobile :
 
@@ -55,7 +66,7 @@ Adresse de l’API selon le terminal :
 docker compose down
 ```
 
-Remise à zéro du broker et de PostgreSQL :
+Remise à zéro (broker, Postgres, Mongo, Loki, Grafana) :
 
 ```powershell
 docker compose down -v
@@ -66,17 +77,20 @@ docker compose down -v
 | Paramètre | Valeur | Signification |
 |---|---|---|
 | Fraîcheur | 10 s | Une mesure est récente si `now - observed_at < 10 s` |
-| Timeout commande | 15 s | À implémenter J3 |
-| Alerte CO₂ | 1500 ppm | À implémenter J4 |
+| Timeout commande | 15 s | Prévu journée commandes |
+| Alerte CO₂ | 1500 ppm | Prévu journée alertes |
 | Historique brut | 200 mesures / objet | Dernières mesures affichables |
 | Moyenne 10 min | 30 jours | Historique allégé (détail salle) |
 | Lake Mongo | 7 jours | TTL sur le flux brut |
 
+Secrets : copier `.env.example` → `.env` ; **ne pas committer** `.env` avec des secrets réels. Les mots de passe du kit (`*-demo`) et Grafana `campus-demo` sont pédagogiques.
+
 ## Structure
 
 ```
-backend/   API Express, client MQTT, PostgreSQL (API) + MongoDB (data lake)
-mobile/    Application Expo
-infra/     Kit Mosquitto + simulateur (non modifié)
-docs/      Architecture, décisions, plans et journaux J1–J4 (voir docs/repartition.md)
+backend/         API Express, client MQTT, PostgreSQL (API) + MongoDB (data lake)
+mobile/          Application Expo
+infra/           Kit Mosquitto + simulateur (non modifié)
+observability/   Loki, Promtail, Grafana (provisioning)
+docs/            Architecture, décisions, journaux J1–J4 (voir docs/repartition.md)
 ```

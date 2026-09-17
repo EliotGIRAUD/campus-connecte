@@ -1,0 +1,287 @@
+{
+  "annotations": { "list": [] },
+  "description": "Dashboard recettes J3 — un panneau par type d’incident à prouver (LogQL prêt).",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["ops"],
+      "title": "Vue opérationnelle",
+      "type": "dashboards"
+    }
+  ],
+  "liveNow": true,
+  "panels": [
+    {
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
+        "content": "## Recettes J3 — preuves LogQL\n\n1. Lancer un incident (`docker compose run --rm tools incident sensor-001 duplicate|invalid|delay|pause`).\n2. Garder la plage **Last 15 minutes** (ou élargir).\n3. Vérifier le panneau correspondant ci-dessous.\n\nFiltres utiles aussi dans **Explore → Loki** : voir `observability/README.md`.",
+        "mode": "markdown"
+      },
+      "title": "Mode d’emploi",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 3 },
+      "id": 50,
+      "title": "Isolation & usurpation",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Trois devices distincts qui publient en parallèle",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=\"telemetry.ingested\", deviceId=~\"sensor-00[123]\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Isolation — ingestions sensor-001/002/003",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Payload device_id ≠ segment de topic → device_id_mismatch",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+      "id": 11,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=\"telemetry.rejected\"} |= \"device_id_mismatch\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Usurpation — device_id_mismatch",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 51,
+      "title": "Validation & ordre",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "id": 20,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=\"telemetry.rejected\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Payload invalide — telemetry.rejected",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "id": 21,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=\"telemetry.duplicate\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Doublon — telemetry.duplicate",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "id": 22,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=\"telemetry.stale_kept\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Retard / retained ancien — stale_kept",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 52,
+      "title": "Pannes & MQTT",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 23 },
+      "id": 30,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\", eventType=~\"mqtt.+\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Broker down / reconnect — mqtt.*",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Corrélation d’une mesure : remplacer l’eventId dans Explore, ou filtrer ici",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 23 },
+      "id": 31,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{compose_service=\"backend\"} |= \"$eventId\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Suivi eventId (= message_id)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "cps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "id": 40,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(rate({compose_service=\"backend\", eventType=\"telemetry.ingested\"}[1m]))",
+          "legendFormat": "charge — ingested/s",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Montée en charge — débit d’ingestion",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["campus", "j3", "recettes"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "", "value": "" },
+        "label": "eventId",
+        "name": "eventId",
+        "options": [{ "selected": true, "text": "", "value": "" }],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "Campus — Recettes J3",
+  "uid": "campus-j3-recettes",
+  "version": 1
+}

@@ -8,5 +8,6 @@
   - **Expo** : caméra, permissions, SecureStore et NetInfo sans éjecter le projet. Une seule base de code Android/iOS ; les stores ne sont pas exigés.
   - **Polling REST 3 s** : actualisation démontrable sans MQTT dans le téléphone (interdit par le sujet pour le socle).
 - **Aide de l’IA :** proposition retenue après comparaison Express/FastAPI et Expo/CLI. Le contrat MQTT n’a pas été inventé : il vient du kit `852f1b1`.
-- **Vérification :** `GET /health`, `GET /api/rooms`, observation `tools watch`, affichage mobile.
-- **Limite :** pas d’auth JWT avant J3 ; pas de commandes ni d’alertes avant J3/J4.
+- **Vérification :** `GET /health`, `GET /api/rooms`, observation `tools watch`, affichage mobile ; J3 : Grafana/Loki + scénarios [docs/J3.md](../J3.md).
+- **Limite :** auth JWT / commandes / alertes hors J1–J3 fiabilité ; observabilité ajoutée en J3 (Loki + pino JSON).
+- **Complément J3 :** logs structurés + Grafana/Loki/Promtail pour prouver validation, doublons, pannes ([007](007-observability.md)).
