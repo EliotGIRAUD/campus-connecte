@@ -134,5 +134,80 @@ export function createApp() {
     });
   });
 
+  app.get("/api/devices/:deviceId/history", async (req, res) => {
+    const device = await prisma.device.findUnique({ where: { id: String(req.params.deviceId) } });
+    if (!device) {
+      res.status(404).json({ error: "objet inconnu" });
+      return;
+    }
+
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const since24h = new Date(now.getTime() - dayMs);
+    const sinceRetention = new Date(now.getTime() - config.averageRetentionMs);
+
+    const [measurements, averagesMonth] = await Promise.all([
+      prisma.measurement.findMany({
+        where: { deviceId: device.id },
+        orderBy: { observedAt: "desc" },
+        take: config.historyLimit,
+      }),
+      prisma.measurementAverage.findMany({
+        where: { deviceId: device.id, windowStart: { gte: sinceRetention } },
+        orderBy: { windowStart: "asc" },
+      }),
+    ]);
+    const averages24h = averagesMonth.filter((row) => row.windowStart >= since24h);
+
+    const dailyMap = new Map<
+      string,
+      { sampleCount: number; temperatureSum: number; co2Sum: number; temperatureUnit: string; co2Unit: string }
+    >();
+    for (const row of averagesMonth) {
+      const day = row.windowStart.toISOString().slice(0, 10);
+      const current = dailyMap.get(day);
+      if (current) {
+        current.sampleCount += row.sampleCount;
+        current.temperatureSum += row.temperatureSum;
+        current.co2Sum += row.co2Sum;
+      } else {
+        dailyMap.set(day, {
+          sampleCount: row.sampleCount,
+          temperatureSum: row.temperatureSum,
+          co2Sum: row.co2Sum,
+          temperatureUnit: row.temperatureUnit,
+          co2Unit: row.co2Unit,
+        });
+      }
+    }
+
+    res.json({
+      device_id: device.id,
+      room_id: device.roomId,
+      window_ms: config.averageWindowMs,
+      retention_days: Math.round(config.averageRetentionMs / dayMs),
+      measurements: measurements.map((item) => ({
+        message_id: item.messageId,
+        observed_at: item.observedAt.toISOString(),
+        temperature: { value: item.temperature, unit: item.temperatureUnit },
+        co2: { value: item.co2, unit: item.co2Unit },
+      })),
+      averages: averages24h.map((row) => ({
+        window_start: row.windowStart.toISOString(),
+        sample_count: row.sampleCount,
+        temperature: { value: row.temperatureSum / row.sampleCount, unit: row.temperatureUnit },
+        co2: { value: row.co2Sum / row.sampleCount, unit: row.co2Unit },
+      })),
+      daily: [...dailyMap.entries()]
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([day, row]) => ({
+          day,
+          sample_count: row.sampleCount,
+          temperature: { value: row.temperatureSum / row.sampleCount, unit: row.temperatureUnit },
+          co2: { value: row.co2Sum / row.sampleCount, unit: row.co2Unit },
+        })),
+    });
+  });
+
   return app;
 }

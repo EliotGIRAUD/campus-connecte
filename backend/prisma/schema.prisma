@@ -24,6 +24,7 @@ model Device {
   co2Unit            String?
   updatedAt          DateTime       @updatedAt
   measurements       Measurement[]
+  averages           MeasurementAverage[]
 }
 
 model Measurement {
@@ -39,4 +40,22 @@ model Measurement {
   co2Unit         String
 
   @@index([deviceId, observedAt(sort: Desc)])
+}
+
+/// 10-minute averages kept 30 days — built incrementally so HISTORY_LIMIT can stay at 200.
+model MeasurementAverage {
+  deviceId        String
+  windowStart     DateTime
+  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  roomId          String
+  sampleCount     Int
+  temperatureSum  Float
+  co2Sum          Float
+  temperatureUnit String
+  co2Unit         String
+  updatedAt       DateTime @updatedAt
+
+  @@id([deviceId, windowStart])
+  @@index([deviceId, windowStart(sort: Desc)])
+  @@index([windowStart])
 }

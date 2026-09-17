@@ -13,4 +13,6 @@ export const colors = {
   warnMuted: "#422006",
   danger: "#F87171",
   dangerMuted: "#450A0A",
+  chartTemp: "#5EEAD4",
+  chartCo2: "#7DD3FC",
 };

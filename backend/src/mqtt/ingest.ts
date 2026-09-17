@@ -9,6 +9,7 @@ import {
   stateSchema,
   telemetrySchema,
 } from "./contract";
+import { recordAverage, purgeOldAverages } from "./averages";
 import { recordRawMessage } from "./lake";
 
 /** Keep at most HISTORY_LIMIT measurements per device (newest by observedAt). */
@@ -116,7 +117,17 @@ async function ingestTelemetry(topicDeviceId: string, body: unknown): Promise<vo
     throw error;
   }
 
+  await recordAverage({
+    deviceId: topicDeviceId,
+    roomId: message.room_id,
+    observedAt,
+    temperature: message.temperature.value,
+    temperatureUnit: message.temperature.unit,
+    co2: message.co2.value,
+    co2Unit: message.co2.unit,
+  });
   await trimHistory(topicDeviceId);
+  await purgeOldAverages();
 
   if (!shouldUpdateLatest(device.lastObservedAt, observedAt)) {
     logger.info(

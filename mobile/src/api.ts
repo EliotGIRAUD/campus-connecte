@@ -38,6 +38,37 @@ export type RoomsResponse = {
   rooms: RoomSummary[];
 };
 
+export type DeviceHistory = {
+  device_id: string;
+  room_id: string;
+  window_ms: number;
+  retention_days: number;
+  measurements: HistoryMeasurement[];
+  averages: HistoryAverage[];
+  daily: HistoryDaily[];
+};
+
+export type HistoryMeasurement = {
+  message_id: string;
+  observed_at: string;
+  temperature: Quantity;
+  co2: Quantity;
+};
+
+export type HistoryAverage = {
+  window_start: string;
+  sample_count: number;
+  temperature: Quantity;
+  co2: Quantity;
+};
+
+export type HistoryDaily = {
+  day: string;
+  sample_count: number;
+  temperature: Quantity;
+  co2: Quantity;
+};
+
 function lanHostFromExpo(): string | null {
   const candidates = [Constants.expoConfig?.hostUri, Constants.linkingUri];
   for (const value of candidates) {
@@ -67,4 +98,12 @@ export async function fetchRooms(): Promise<RoomsResponse> {
     throw new Error(`HTTP ${response.status}`);
   }
   return response.json() as Promise<RoomsResponse>;
+}
+
+export async function fetchDeviceHistory(deviceId: string): Promise<DeviceHistory> {
+  const response = await fetch(`${getApiUrl()}/api/devices/${encodeURIComponent(deviceId)}/history`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json() as Promise<DeviceHistory>;
 }

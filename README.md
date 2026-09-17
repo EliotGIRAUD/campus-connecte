@@ -68,7 +68,9 @@ docker compose down -v
 | Fraîcheur | 10 s | Une mesure est récente si `now - observed_at < 10 s` |
 | Timeout commande | 15 s | À implémenter J3 |
 | Alerte CO₂ | 1500 ppm | À implémenter J4 |
-| Historique | 200 mesures / objet | Borne de lecture |
+| Historique brut | 200 mesures / objet | Dernières mesures affichables |
+| Moyenne 10 min | 30 jours | Historique allégé (détail salle) |
+| Lake Mongo | 7 jours | TTL sur le flux brut |
 
 ## Structure
 

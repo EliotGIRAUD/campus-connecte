@@ -27,7 +27,19 @@ export async function connectLake(): Promise<void> {
   await events.createIndex({ receivedAt: -1 });
   await events.createIndex({ deviceId: 1, receivedAt: -1 });
   await events.createIndex({ messageId: 1 }, { sparse: true });
-  logger.info({ db: config.lakeMongoDb }, "data lake mongodb connecte");
+  try {
+    await events.dropIndex("mqtt_events_ttl");
+  } catch {
+    // First boot: the TTL index does not exist yet.
+  }
+  await events.createIndex(
+    { receivedAt: 1 },
+    { name: "mqtt_events_ttl", expireAfterSeconds: config.lakeTtlSeconds },
+  );
+  logger.info(
+    { db: config.lakeMongoDb, ttlSeconds: config.lakeTtlSeconds },
+    "data lake mongodb connecte",
+  );
 }
 
 export async function pingLake(): Promise<boolean> {

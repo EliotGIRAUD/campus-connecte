@@ -12,6 +12,9 @@ export const config = {
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS ?? 15_000),
   alertCo2Ppm: Number(process.env.ALERT_CO2_PPM ?? 1500),
   historyLimit: Number(process.env.HISTORY_LIMIT ?? 200),
+  averageWindowMs: Number(process.env.AVERAGE_WINDOW_MS ?? 10 * 60 * 1000),
+  averageRetentionMs: Number(process.env.AVERAGE_RETENTION_MS ?? 30 * 24 * 60 * 60 * 1000),
+  lakeTtlSeconds: Number(process.env.LAKE_TTL_SECONDS ?? 7 * 24 * 60 * 60),
 };
 
 export const CATALOG = [
