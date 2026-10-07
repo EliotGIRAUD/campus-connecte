@@ -8,4 +8,4 @@
   - **`HISTORY_LIMIT` (200)** : après chaque insertion réussie, supprimer les mesures au-delà de la borne par objet (`historique borne`).
   - **Cache AsyncStorage** des dernières salles + `cachedAt` ; bandeau NetInfo « Téléphone hors ligne » distinct de « Donnée ancienne » (fraîcheur) et « Objet hors ligne » (availability). L’UI **recalcule** `freshness` / l’âge à partir de `observed_at` (et de l’horloge locale) : le cache ne fige plus le snapshot serveur.
 - **Vérification :** `tools incident … duplicate|delay|pause` ; `GET /api/devices/sensor-001` ; mode avion après une lecture réussie (la donnée passe `stale` après 10 s sans confondre téléphone / objet).
-- **Limite :** pas de file de commandes hors ligne (volontaire jusqu’à J4).
+- **Limite :** pas de file de commandes hors ligne côté mobile ; les commandes J4 timeout si l’objet est absent (sessions clean du kit).

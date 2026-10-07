@@ -36,6 +36,38 @@ export function ventilationLabel(value: boolean | null): string {
   return "Ventilation inconnue";
 }
 
+export function commandStatusLabel(status: string): string {
+  switch (status) {
+    case "PENDING":
+      return "Enregistrement…";
+    case "SENT":
+      return "En attente de confirmation";
+    case "ACKNOWLEDGED":
+      return "Confirmée par l’objet";
+    case "FAILED":
+      return "Échouée";
+    case "TIMEOUT":
+      return "Expirée (pas d’acquittement)";
+    default:
+      return status;
+  }
+}
+
+export function commandStatusTone(status: string): "ok" | "warn" | "danger" | "muted" {
+  switch (status) {
+    case "ACKNOWLEDGED":
+      return "ok";
+    case "PENDING":
+    case "SENT":
+      return "warn";
+    case "FAILED":
+    case "TIMEOUT":
+      return "danger";
+    default:
+      return "muted";
+  }
+}
+
 export function freshnessLabel(freshness: string): string {
   if (freshness === "fresh") {
     return "Donnée récente";

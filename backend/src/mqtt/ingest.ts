@@ -35,7 +35,7 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
       topic,
       deviceId: parsedTopic?.deviceId ?? null,
       messageKind: parsedTopic?.kind ?? null,
-      messageId: extractMessageId(payloadRaw),
+      messageId: extractCorrelationId(payloadRaw),
       payloadRaw,
     });
   } catch (error) {
@@ -54,13 +54,15 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
     throw error;
   }
 
+  const correlationId = extractCorrelationId(payloadRaw);
   logEvent(
     "debug",
     {
       eventType: "mqtt.queued",
       topic,
       deviceId: parsedTopic?.deviceId ?? undefined,
-      eventId: extractMessageId(payloadRaw) ?? undefined,
+      eventId: correlationId ?? undefined,
+      commandId: extractCommandId(payloadRaw) ?? undefined,
       status: "pending",
       lakeEventId: String(lakeEventId),
     },
@@ -68,10 +70,25 @@ export async function handleMqttMessage(topic: string, payload: Buffer): Promise
   );
 }
 
-function extractMessageId(payloadRaw: string): string | null {
+function extractCorrelationId(payloadRaw: string): string | null {
   try {
-    const parsed = JSON.parse(payloadRaw) as { message_id?: unknown };
-    return typeof parsed.message_id === "string" ? parsed.message_id : null;
+    const parsed = JSON.parse(payloadRaw) as { message_id?: unknown; command_id?: unknown };
+    if (typeof parsed.message_id === "string") {
+      return parsed.message_id;
+    }
+    if (typeof parsed.command_id === "string") {
+      return parsed.command_id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractCommandId(payloadRaw: string): string | null {
+  try {
+    const parsed = JSON.parse(payloadRaw) as { command_id?: unknown };
+    return typeof parsed.command_id === "string" ? parsed.command_id : null;
   } catch {
     return null;
   }

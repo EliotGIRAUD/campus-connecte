@@ -51,7 +51,20 @@ export const stateSchema = z.object({
   ventilation: z.boolean(),
 });
 
+/** Device ACK / reject on campus/v1/devices/{id}/results */
+export const commandResultSchema = z.object({
+  schema_version: z.literal(1),
+  device_id: z.string().min(1),
+  command_id: z.string().min(1).max(80),
+  status: z.enum(["executed", "rejected"]),
+  executed_at: isoDate.optional(),
+  reported_at: isoDate.optional(),
+  reason: z.string().optional(),
+  ventilation: z.boolean().optional(),
+});
+
 export type Telemetry = z.infer<typeof telemetrySchema>;
+export type CommandResult = z.infer<typeof commandResultSchema>;
 
 export function parseTopic(topic: string): { deviceId: string; kind: string } | null {
   const parts = topic.split("/");

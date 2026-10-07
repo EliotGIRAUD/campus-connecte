@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { airQuality, formatAge, freshnessLabel, ventilationLabel } from "./format.ts";
+import {
+  airQuality,
+  commandStatusLabel,
+  formatAge,
+  freshnessLabel,
+  ventilationLabel,
+} from "./format.ts";
 
 describe("formatAge", () => {
   const now = new Date("2026-09-17T12:00:30.000Z");
@@ -24,5 +30,11 @@ describe("labels", () => {
     assert.equal(freshnessLabel("stale"), "Donnée ancienne");
     assert.equal(ventilationLabel(true), "Ventilation active");
     assert.equal(ventilationLabel(null), "Ventilation inconnue");
+  });
+
+  it("maps command lifecycle statuses", () => {
+    assert.equal(commandStatusLabel("SENT"), "En attente de confirmation");
+    assert.equal(commandStatusLabel("ACKNOWLEDGED"), "Confirmée par l’objet");
+    assert.equal(commandStatusLabel("TIMEOUT"), "Expirée (pas d’acquittement)");
   });
 });

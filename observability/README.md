@@ -58,6 +58,14 @@ Datasource : **Loki**.
 {compose_service="backend"} |= "REMPLACER_MESSAGE_ID"
 ```
 
+### Suivre une commande (`commandId`)
+
+```logql
+{compose_service="backend"} |= "REMPLACER_COMMAND_ID"
+```
+
+Événements utiles : `command.accepted`, `command.sent`, `command.acknowledged`, `command.failed`, `command.timeout`, `command.ack_late`, `command.ack_duplicate`, `command.duplicate_request`.
+
 ### Erreurs / état MQTT
 
 ```logql

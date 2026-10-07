@@ -124,3 +124,78 @@ export async function fetchRooms(): Promise<RoomsResponse> {
 export async function fetchDeviceHistory(deviceId: string): Promise<DeviceHistory> {
   return fetchJson<DeviceHistory>(`/api/devices/${encodeURIComponent(deviceId)}/history`);
 }
+
+export type CommandStatus = "PENDING" | "SENT" | "ACKNOWLEDGED" | "FAILED" | "TIMEOUT";
+
+export type CommandRecord = {
+  command_id: string;
+  device_id: string;
+  action: string;
+  enabled: boolean;
+  status: CommandStatus | string;
+  created_at: string;
+  expires_at: string;
+  sent_at: string | null;
+  acknowledged_at: string | null;
+  timed_out_at: string | null;
+  late_ack_at: string | null;
+  result: {
+    status: string;
+    reason: string | null;
+    ventilation: boolean | null;
+  } | null;
+};
+
+async function fetchJsonMutate<T>(path: string, init: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${getApiUrl()}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const body = (await response.json()) as { error?: string };
+        if (body.error) {
+          detail = body.error;
+        }
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Délai dépassé");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function postVentilationCommand(
+  deviceId: string,
+  enabled: boolean,
+): Promise<CommandRecord> {
+  return fetchJsonMutate<CommandRecord>(
+    `/api/devices/${encodeURIComponent(deviceId)}/commands`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "set_ventilation", enabled }),
+    },
+  );
+}
+
+export async function fetchCommand(deviceId: string, commandId: string): Promise<CommandRecord> {
+  return fetchJson<CommandRecord>(
+    `/api/devices/${encodeURIComponent(deviceId)}/commands/${encodeURIComponent(commandId)}`,
+  );
+}

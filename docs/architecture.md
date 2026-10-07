@@ -12,7 +12,9 @@ flowchart LR
     B -->|"stdout JSON"| P["Promtail"]
     P --> L["Loki"]
     L --> G["Grafana"]
-    B -->|"REST GET /api"| A["Expo / React Native"]
+    A["Expo / React Native"] -->|"REST GET+POST /api"| B
+    B -->|"MQTT commands QoS 1"| M
+    M -->|"results ACK"| B
 ```
 
 | Étape | Rôle | Technologie |
@@ -24,9 +26,9 @@ flowchart LR
 | File consolidation | États pending → processed ; claim atomique | MongoDB `consolidation_jobs` |
 | Stockage API | Dernier état + 200 mesures + moyennes 10 min / 30 j | PostgreSQL `campus`, Prisma |
 | Observabilité | Logs structurés, filtres par device / eventType | Pino → Promtail → Loki → Grafana |
-| Mobile | Affiche mesures, cache local, états réseau distincts | React Native, Expo, Zustand, AsyncStorage, NetInfo |
+| Mobile | Affiche mesures, envoie commandes, cache local | React Native, Expo, Zustand, AsyncStorage, NetInfo |
 
-Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’historique et l’observabilité du traitement.
+Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’historique, les commandes et l’observabilité du traitement.
 
 ## Identité des objets et topics
 
@@ -34,9 +36,34 @@ Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’h
 |---|---|---|
 | `device_id` | Topic `campus/v1/devices/{id}/{kind}`, payload, `Device.id` | Identité stable de l’objet |
 | `message_id` | Payload télémétrie, `Measurement.messageId`, log `eventId` | Identité d’une observation (dédup + corrélation) |
+| `command_id` | Payload commande / résultat, `Command.id`, log `commandId` | Corrélation demande → ACK |
 | `room_id` | Payload + `Device.roomId` | Affectation salle (registre backend) |
 
-Topics consommés par le backend : `telemetry`, `state`, `availability` (wildcard `+` sur le device).
+Topics consommés par le backend : `telemetry`, `state`, `availability`, `results` (wildcard `+` sur le device).  
+Topic publié par le backend : `campus/v1/devices/{device_id}/commands` (QoS 1, **non retained**).
+
+## Flux descendant — commandes (J4)
+
+```text
+Mobile POST /api/devices/:id/commands
+  → Command PENDING (Postgres)
+  → publish MQTT …/commands
+  → Command SENT
+  → objet exécute + publish …/results
+  → lake + consolidation → rattache command_id
+  → ACKNOWLEDGED | FAILED
+  (sinon TIMEOUT à expires_at = now + COMMAND_TIMEOUT_MS)
+```
+
+| Étape | Ce que le système sait |
+|---|---|
+| `PENDING` | API a accepté ; pas encore publié (fenêtre courte) |
+| `SENT` | Publié MQTT ; exécution **non** confirmée |
+| `ACKNOWLEDGED` | Objet a renvoyé `executed` pour ce `command_id` |
+| `FAILED` | Objet a renvoyé `rejected` (ou échec publish) |
+| `TIMEOUT` | Aucun ACK avant `expires_at` ; un ACK tardif est journalisé (`command.ack_late`) sans repasser en succès |
+
+API : `POST/GET /api/devices/:deviceId/commands[/:commandId]`. Détail : [ADR 011](decisions/011-command-lifecycle.md).
 
 **Validation avant le cœur métier :** JSON parseable → schéma Zod (contrat + bornes métier) → `device_id` == segment topic → device connu du registre → `observed_at` pas trop dans le futur. Sinon `telemetry.rejected` (ou équivalent) et **pas** d’écriture PostgreSQL métier. Le lake Mongo peut quand même conserver le brut.
 
@@ -119,8 +146,8 @@ Session MQTT `clean: false` + `clientId` stable (`campus-backend`), abonnements 
 | Clé | Valeur |
 |---|---|
 | `FRESHNESS_MS` | 10000 |
-| `COMMAND_TIMEOUT_MS` | 15000 (prévu journée commandes) |
-| `ALERT_CO2_PPM` | 1500 (prévu alertes) |
+| `COMMAND_TIMEOUT_MS` | 15000 |
+| `ALERT_CO2_PPM` | 1500 (prévu alertes J5) |
 | `HISTORY_LIMIT` | 200 |
 | `AVERAGE_WINDOW_MS` | 600000 (10 min) |
 | `AVERAGE_RETENTION_MS` | 2592000000 (30 j) |
@@ -129,4 +156,4 @@ Session MQTT `clean: false` + `clientId` stable (`campus-backend`), abonnements 
 | `CONSOLIDATION_LOCK_MS` | 30000 |
 | `CONSOLIDATION_LAG_WARN_MS` | 10000 |
 
-Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md), [010 pipeline ingestion/consolidation](decisions/010-ingestion-consolidation.md).
+Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md), [010 pipeline ingestion/consolidation](decisions/010-ingestion-consolidation.md), [011 commandes](decisions/011-command-lifecycle.md).

@@ -11,7 +11,7 @@ export const config = {
     clientId: process.env.MQTT_CLIENT_ID ?? "campus-backend",
   },
   freshnessMs: Number(process.env.FRESHNESS_MS ?? 10_000),
-  /** Reserved for J4 — command ACK timeout (unused until command path lands). */
+  /** Command ACK timeout — also used as MQTT expires_at window. */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS ?? 15_000),
   /** Reserved for J5 — CO₂ alert rule / hysteresis (unused until alert product lands). */
   alertCo2Ppm: Number(process.env.ALERT_CO2_PPM ?? 1500),

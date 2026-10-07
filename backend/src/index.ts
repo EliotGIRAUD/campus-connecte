@@ -1,3 +1,4 @@
+import { startCommandTimeoutSweeper } from "./commands";
 import { CATALOG, config } from "./config";
 import { prisma } from "./db";
 import { connectLake } from "./lake-db";
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
   await seedDevices();
   startConsolidationWorkers();
   connectMqtt();
+  startCommandTimeoutSweeper();
   const app = createApp();
   app.listen(config.port, "0.0.0.0", () => {
     logEvent(

@@ -25,6 +25,29 @@ model Device {
   updatedAt          DateTime       @updatedAt
   measurements       Measurement[]
   averages           MeasurementAverage[]
+  commands           Command[]
+}
+
+/// Lifecycle of a downlink command (mobile → API → MQTT → device → ACK).
+model Command {
+  id                 String    @id
+  deviceId           String
+  device             Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  action             String
+  enabled            Boolean
+  status             String
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime
+  sentAt             DateTime?
+  acknowledgedAt     DateTime?
+  resultStatus       String?
+  resultReason       String?
+  resultVentilation  Boolean?
+  timedOutAt         DateTime?
+  lateAckAt          DateTime?
+
+  @@index([deviceId, createdAt(sort: Desc)])
+  @@index([status, expiresAt])
 }
 
 model Measurement {

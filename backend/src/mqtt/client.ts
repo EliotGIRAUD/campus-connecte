@@ -10,7 +10,16 @@ const TOPICS = [
   "campus/v1/devices/+/telemetry",
   "campus/v1/devices/+/state",
   "campus/v1/devices/+/availability",
+  "campus/v1/devices/+/results",
 ];
+
+export type CommandPayload = {
+  schema_version: 1;
+  command_id: string;
+  action: "set_ventilation";
+  enabled: boolean;
+  expires_at: string;
+};
 
 export function isMqttConnected(): boolean {
   return connected;
@@ -105,4 +114,22 @@ export function connectMqtt(): MqttClient {
   });
 
   return client;
+}
+
+/** Publish a command to the device topic (never retained — kit contract). */
+export function publishDeviceCommand(deviceId: string, payload: CommandPayload): Promise<void> {
+  const topic = `campus/v1/devices/${deviceId}/commands`;
+  return new Promise((resolve, reject) => {
+    if (!client || !connected) {
+      reject(new Error("mqtt_not_connected"));
+      return;
+    }
+    client.publish(topic, JSON.stringify(payload), { qos: 1, retain: false }, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
 }

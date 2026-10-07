@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -8,10 +8,23 @@ import {
   Text,
   View,
 } from "react-native";
-import type { DeviceSummary } from "../api";
+import {
+  fetchCommand,
+  postVentilationCommand,
+  type CommandRecord,
+  type DeviceSummary,
+} from "../api";
 import { HistoryCharts } from "../HistoryCharts";
 import { withLiveFreshness } from "../freshness";
-import { airQuality, formatAge, formatDate, freshnessLabel, ventilationLabel } from "../format";
+import {
+  airQuality,
+  commandStatusLabel,
+  commandStatusTone,
+  formatAge,
+  formatDate,
+  freshnessLabel,
+  ventilationLabel,
+} from "../format";
 import { useNow } from "../hooks/useNow";
 import { useCampusStore } from "../store";
 import { CO2_HIGH_PPM } from "../thresholds";
@@ -21,6 +34,8 @@ import { StatusDot } from "./StatusDot";
 import { TonePill } from "./TonePill";
 
 const HISTORY_POLL_MS = 15000;
+const COMMAND_POLL_MS = 800;
+const TERMINAL = new Set(["ACKNOWLEDGED", "FAILED", "TIMEOUT"]);
 
 export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: () => void }) {
   const now = useNow();
@@ -31,11 +46,50 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
   const historyRefreshing = useCampusStore((state) => state.historyRefreshing);
   const loadHistory = useCampusStore((state) => state.loadHistory);
   const refreshHistory = useCampusStore((state) => state.refreshHistory);
+  const loadRooms = useCampusStore((state) => state.loadRooms);
+
+  const [command, setCommand] = useState<CommandRecord | null>(null);
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const latest = device.latest ? withLiveFreshness(device.latest, now) : null;
   const quality = latest ? airQuality(latest.co2.value) : null;
   const highCo2 = Boolean(latest && latest.co2.value >= CO2_HIGH_PPM);
   const stale = latest?.freshness === "stale";
+  const waitingAck = Boolean(command && !TERMINAL.has(command.status));
+
+  const stopPoll = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const startPoll = useCallback(
+    (commandId: string) => {
+      stopPoll();
+      pollRef.current = setInterval(() => {
+        void fetchCommand(device.device_id, commandId)
+          .then((next) => {
+            setCommand(next);
+            if (TERMINAL.has(next.status)) {
+              stopPoll();
+              setCommandBusy(false);
+              void loadRooms(true);
+            }
+          })
+          .catch(() => {
+            /* keep last known status; next tick retries */
+          });
+      }, COMMAND_POLL_MS);
+    },
+    [device.device_id, loadRooms, stopPoll],
+  );
+
+  useEffect(() => {
+    return () => stopPoll();
+  }, [stopPoll]);
 
   useEffect(() => {
     void loadHistory(device.device_id);
@@ -46,6 +100,29 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
       clearInterval(id);
     };
   }, [device.device_id, loadHistory]);
+
+  const sendVentilation = async (enabled: boolean) => {
+    if (commandBusy) {
+      return;
+    }
+    setCommandBusy(true);
+    setCommandError(null);
+    try {
+      const created = await postVentilationCommand(device.device_id, enabled);
+      setCommand(created);
+      if (TERMINAL.has(created.status)) {
+        setCommandBusy(false);
+        void loadRooms(true);
+      } else {
+        startPoll(created.command_id);
+      }
+    } catch (error) {
+      setCommandBusy(false);
+      setCommandError(error instanceof Error ? error.message : "Envoi impossible");
+    }
+  };
+
+  const commandTone = command ? commandStatusTone(command.status) : "muted";
 
   return (
     <ScrollView
@@ -116,6 +193,80 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
         </View>
       )}
 
+      <View style={styles.commandCard}>
+        <Text style={styles.commandTitle}>Ventilation</Text>
+        <Text style={styles.commandHint}>
+          La commande n’est considérée comme réussie qu’après confirmation (ACK) de l’objet.
+        </Text>
+        <View style={styles.commandRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Activer la ventilation"
+            disabled={commandBusy}
+            style={({ pressed }) => [
+              styles.commandBtn,
+              styles.commandBtnOn,
+              (pressed || commandBusy) && styles.commandBtnPressed,
+            ]}
+            onPress={() => void sendVentilation(true)}
+          >
+            {commandBusy && waitingAck ? (
+              <ActivityIndicator color={colors.bg} />
+            ) : (
+              <Text style={styles.commandBtnText}>Activer</Text>
+            )}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Arrêter la ventilation"
+            disabled={commandBusy}
+            style={({ pressed }) => [
+              styles.commandBtn,
+              styles.commandBtnOff,
+              (pressed || commandBusy) && styles.commandBtnPressed,
+            ]}
+            onPress={() => void sendVentilation(false)}
+          >
+            <Text style={styles.commandBtnTextOff}>Arrêter</Text>
+          </Pressable>
+        </View>
+        {commandError ? (
+          <Text style={styles.commandError} accessibilityRole="alert">
+            {commandError}
+          </Text>
+        ) : null}
+        {command ? (
+          <View style={styles.commandStatusBox}>
+            <TonePill label={commandStatusLabel(command.status)} tone={commandTone === "muted" ? "warn" : commandTone} />
+            <Text style={styles.commandMeta}>id {command.command_id}</Text>
+            {waitingAck ? (
+              <Text style={styles.commandWait}>En attente de l’acquittement de l’objet…</Text>
+            ) : null}
+            {command.status === "ACKNOWLEDGED" ? (
+              <Text style={styles.commandOk}>
+                Exécutée
+                {command.result?.ventilation === true
+                  ? " — ventilation active"
+                  : command.result?.ventilation === false
+                    ? " — ventilation arrêtée"
+                    : ""}
+              </Text>
+            ) : null}
+            {command.status === "TIMEOUT" ? (
+              <Text style={styles.commandWarn}>
+                Aucun ACK avant expiration
+                {command.late_ack_at ? " (un ACK tardif a été journalisé)" : ""}
+              </Text>
+            ) : null}
+            {command.status === "FAILED" ? (
+              <Text style={styles.commandError}>
+                Rejet{command.result?.reason ? ` : ${command.result.reason}` : ""}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
       {historyError && history ? (
         <View style={styles.historySoftError} accessibilityRole="alert">
           <Text style={styles.historySoftErrorText}>{historyError}</Text>
@@ -175,6 +326,41 @@ const styles = StyleSheet.create({
   metaValue: { marginTop: 10, color: colors.text, fontSize: 16, fontWeight: "600" },
   metaHint: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18 },
   state: { fontSize: 16, color: colors.muted },
+  commandCard: {
+    marginTop: 4,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+  },
+  commandTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
+  commandHint: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  commandRow: { flexDirection: "row", gap: 10 },
+  commandBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  commandBtnOn: { backgroundColor: colors.accent },
+  commandBtnOff: {
+    backgroundColor: colors.surfaceHover,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  commandBtnPressed: { opacity: 0.75 },
+  commandBtnText: { color: colors.bg, fontWeight: "700", fontSize: 15 },
+  commandBtnTextOff: { color: colors.text, fontWeight: "700", fontSize: 15 },
+  commandStatusBox: { gap: 6, marginTop: 4 },
+  commandMeta: { color: colors.muted, fontSize: 12, fontFamily: "monospace" },
+  commandWait: { color: colors.warn, fontSize: 13, fontWeight: "600" },
+  commandOk: { color: colors.ok, fontSize: 13, fontWeight: "600" },
+  commandWarn: { color: colors.warn, fontSize: 13, fontWeight: "600" },
+  commandError: { color: colors.danger, fontSize: 13, fontWeight: "600" },
   historyState: {
     marginTop: 8,
     padding: 20,

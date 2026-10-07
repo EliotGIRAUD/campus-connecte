@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { config } from "../config";
 import { prisma } from "../db";
 import { logEvent } from "../logger";
+import { applyCommandResult } from "../commands";
 import {
   availabilitySchema,
+  commandResultSchema,
   isObservedAtTooFarInFuture,
   parseTopic,
   stateSchema,
@@ -85,6 +87,9 @@ export async function consolidateRawMessage(
   }
   if (parsedTopic.kind === "state") {
     return consolidateState(parsedTopic.deviceId, body, topic);
+  }
+  if (parsedTopic.kind === "results") {
+    return consolidateCommandResult(parsedTopic.deviceId, body, topic);
   }
   return "rejected";
 }
@@ -398,5 +403,54 @@ async function consolidateState(
     },
     "etat ventilation mis a jour",
   );
+  return "processed";
+}
+
+async function consolidateCommandResult(
+  topicDeviceId: string,
+  body: unknown,
+  topic: string,
+): Promise<ConsolidateOutcome> {
+  const parsed = commandResultSchema.safeParse(body);
+  if (!parsed.success) {
+    logEvent(
+      "warn",
+      {
+        eventType: "command.result_rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "schema_invalid",
+        issues: parsed.error.issues,
+      },
+      "resultat commande rejete",
+    );
+    return "rejected";
+  }
+  if (parsed.data.device_id !== topicDeviceId) {
+    logEvent(
+      "warn",
+      {
+        eventType: "command.result_rejected",
+        deviceId: topicDeviceId,
+        topic,
+        status: "rejected",
+        reason: "device_id_mismatch",
+        payloadDeviceId: parsed.data.device_id,
+        commandId: parsed.data.command_id,
+      },
+      "resultat commande incoherent",
+    );
+    return "rejected";
+  }
+
+  await applyCommandResult({
+    deviceId: topicDeviceId,
+    commandId: parsed.data.command_id,
+    resultStatus: parsed.data.status,
+    reason: parsed.data.reason,
+    ventilation: parsed.data.ventilation,
+    topic,
+  });
   return "processed";
 }

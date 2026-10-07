@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  commandResultSchema,
   freshnessOf,
   isObservedAtTooFarInFuture,
   parseTopic,
@@ -85,5 +86,29 @@ describe("contrat mqtt", () => {
     assert.equal(freshnessOf(observed, now, 10_000), "fresh");
     assert.equal(freshnessOf(observed, new Date("2026-09-15T08:00:11.000Z"), 10_000), "stale");
     assert.equal(freshnessOf(null, now, 10_000), "unknown");
+  });
+
+  it("accepte un resultat de commande executee", () => {
+    const parsed = commandResultSchema.safeParse({
+      schema_version: 1,
+      device_id: "sensor-001",
+      command_id: "cmd-demo-1",
+      status: "executed",
+      executed_at: "2026-10-07T12:00:01.000Z",
+      ventilation: true,
+    });
+    assert.equal(parsed.success, true);
+  });
+
+  it("accepte un rejet de commande", () => {
+    const parsed = commandResultSchema.safeParse({
+      schema_version: 1,
+      device_id: "sensor-001",
+      command_id: "cmd-demo-2",
+      status: "rejected",
+      reason: "expired",
+      reported_at: "2026-10-07T12:00:01.000Z",
+    });
+    assert.equal(parsed.success, true);
   });
 });

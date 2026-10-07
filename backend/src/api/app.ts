@@ -1,11 +1,19 @@
 import cors from "cors";
 import express from "express";
+import { z } from "zod";
+import { issueVentilationCommand, serializeCommand } from "../commands";
 import { config } from "../config";
 import { prisma } from "../db";
 import { pingLake } from "../lake-db";
 import { freshnessOf } from "../mqtt/contract";
 import { isMqttConnected } from "../mqtt/client";
 import { getConsolidationLag } from "../mqtt/queue";
+
+const createCommandBody = z.object({
+  action: z.literal("set_ventilation"),
+  enabled: z.boolean(),
+  command_id: z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/).optional(),
+});
 
 function serializeDevice(device: {
   id: string;
@@ -202,6 +210,59 @@ export function createApp() {
         co2: { value: item.co2, unit: item.co2Unit },
       })),
     });
+  });
+
+  app.post("/api/devices/:deviceId/commands", async (req, res) => {
+    const deviceId = String(req.params.deviceId);
+    const parsed = createCommandBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "corps invalide", issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const { command, created } = await issueVentilationCommand(
+        deviceId,
+        parsed.data.enabled,
+        parsed.data.command_id,
+      );
+      res.status(created ? 201 : 200).json(serializeCommand(command));
+    } catch (error) {
+      const statusCode =
+        error && typeof error === "object" && "statusCode" in error
+          ? Number((error as { statusCode: number }).statusCode)
+          : 500;
+      const message = error instanceof Error ? error.message : "erreur commande";
+      res.status(statusCode || 500).json({ error: message });
+    }
+  });
+
+  app.get("/api/devices/:deviceId/commands/:commandId", async (req, res) => {
+    const deviceId = String(req.params.deviceId);
+    const commandId = String(req.params.commandId);
+    const command = await prisma.command.findFirst({
+      where: { id: commandId, deviceId },
+    });
+    if (!command) {
+      res.status(404).json({ error: "commande inconnue" });
+      return;
+    }
+    res.json(serializeCommand(command));
+  });
+
+  app.get("/api/devices/:deviceId/commands", async (req, res) => {
+    const deviceId = String(req.params.deviceId);
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) {
+      res.status(404).json({ error: "objet inconnu" });
+      return;
+    }
+    const limit = Math.min(Number(req.query.limit ?? 20), 50);
+    const commands = await prisma.command.findMany({
+      where: { deviceId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    res.json({ device_id: deviceId, commands: commands.map(serializeCommand) });
   });
 
   app.get("/api/devices/:deviceId/history", async (req, res) => {

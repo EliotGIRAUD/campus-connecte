@@ -31,6 +31,14 @@ curl http://localhost:3000/health
 curl http://localhost:3000/api/rooms
 ```
 
+Commande ventilation (ACK objet) :
+
+```powershell
+curl.exe -s -X POST http://localhost:3000/api/devices/sensor-001/commands `
+  -H "Content-Type: application/json" `
+  -d '{"action":"set_ventilation","enabled":true}'
+```
+
 ### Observabilité (J3)
 
 | Service | URL |
@@ -77,7 +85,7 @@ docker compose down -v
 | Paramètre | Valeur | Signification |
 |---|---|---|
 | Fraîcheur | 10 s | Une mesure est récente si `now - observed_at < 10 s` |
-| Timeout commande | 15 s | Prévu journée commandes |
+| Timeout commande | 15 s | Sans ACK → `TIMEOUT` (`COMMAND_TIMEOUT_MS`) |
 | Alerte CO₂ | 1500 ppm | Prévu journée alertes |
 | Historique brut | 200 mesures / objet | Dernières mesures affichables |
 | Moyenne 10 min | 30 jours | Historique allégé (détail salle) |
