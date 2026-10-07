@@ -7,6 +7,8 @@ export const config = {
     url: process.env.MQTT_URL ?? "mqtt://localhost:1883",
     username: process.env.MQTT_USER ?? "backend",
     password: process.env.MQTT_PASSWORD ?? "backend-demo",
+    /** Stable across restarts — required for persistent session (clean:false). */
+    clientId: process.env.MQTT_CLIENT_ID ?? "campus-backend",
   },
   freshnessMs: Number(process.env.FRESHNESS_MS ?? 10_000),
   /** Reserved for J4 — command ACK timeout (unused until command path lands). */
@@ -17,6 +19,12 @@ export const config = {
   averageWindowMs: Number(process.env.AVERAGE_WINDOW_MS ?? 10 * 60 * 1000),
   averageRetentionMs: Number(process.env.AVERAGE_RETENTION_MS ?? 30 * 24 * 60 * 60 * 1000),
   lakeTtlSeconds: Number(process.env.LAKE_TTL_SECONDS ?? 7 * 24 * 60 * 60),
+  /** In-process consolidation workers (independent from MQTT ingress concurrency). */
+  consolidationWorkers: Number(process.env.CONSOLIDATION_WORKERS ?? 2),
+  consolidationPollMs: Number(process.env.CONSOLIDATION_POLL_MS ?? 200),
+  consolidationLockMs: Number(process.env.CONSOLIDATION_LOCK_MS ?? 30_000),
+  consolidationMaxAttempts: Number(process.env.CONSOLIDATION_MAX_ATTEMPTS ?? 8),
+  consolidationLagWarnMs: Number(process.env.CONSOLIDATION_LAG_WARN_MS ?? 10_000),
 };
 
 export const CATALOG = [

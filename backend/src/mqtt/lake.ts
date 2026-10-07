@@ -1,5 +1,5 @@
+import { type ObjectId } from "mongodb";
 import { lakeEvents } from "../lake-db";
-import { logEvent } from "../logger";
 import { parseTopic } from "./contract";
 
 function parsePayload(raw: Buffer): unknown | undefined {
@@ -20,35 +20,21 @@ function extractMessageId(payload: unknown): string | null {
 
 /**
  * Append-only write to the MongoDB data lake.
- * No updates — one document per MQTT message, timestamped for history.
+ * Throws on failure — ingestion must not continue without a durable raw copy.
  */
-export async function recordRawMessage(topic: string, payload: Buffer): Promise<void> {
+export async function recordRawMessage(topic: string, payload: Buffer): Promise<ObjectId> {
   const parsedTopic = parseTopic(topic);
   const payloadRaw = payload.toString("utf8");
   const parsed = parsePayload(payload);
 
-  try {
-    await lakeEvents().insertOne({
-      topic,
-      deviceId: parsedTopic?.deviceId ?? null,
-      messageKind: parsedTopic?.kind ?? null,
-      messageId: extractMessageId(parsed),
-      payloadRaw,
-      payload: parsed,
-      receivedAt: new Date(),
-    });
-  } catch (error) {
-    logEvent(
-      "warn",
-      {
-        eventType: "lake.write_failed",
-        topic,
-        deviceId: parsedTopic?.deviceId ?? undefined,
-        eventId: extractMessageId(parsed) ?? undefined,
-        status: "error",
-        reason: error instanceof Error ? error.message : String(error),
-      },
-      "echec ecriture data lake mongodb",
-    );
-  }
+  const result = await lakeEvents().insertOne({
+    topic,
+    deviceId: parsedTopic?.deviceId ?? null,
+    messageKind: parsedTopic?.kind ?? null,
+    messageId: extractMessageId(parsed),
+    payloadRaw,
+    payload: parsed,
+    receivedAt: new Date(),
+  });
+  return result.insertedId;
 }

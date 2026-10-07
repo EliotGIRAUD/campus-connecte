@@ -4,6 +4,7 @@ import { connectLake } from "./lake-db";
 import { logEvent } from "./logger";
 import { createApp } from "./api/app";
 import { connectMqtt } from "./mqtt/client";
+import { startConsolidationWorkers } from "./mqtt/worker";
 
 async function seedDevices(): Promise<void> {
   for (const item of CATALOG) {
@@ -18,6 +19,7 @@ async function seedDevices(): Promise<void> {
 async function main(): Promise<void> {
   await connectLake();
   await seedDevices();
+  startConsolidationWorkers();
   connectMqtt();
   const app = createApp();
   app.listen(config.port, "0.0.0.0", () => {

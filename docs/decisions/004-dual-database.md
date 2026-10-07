@@ -5,7 +5,7 @@
 - **Choix et compromis :**
   - **`campus_lake` (MongoDB)** : collection `mqtt_events` — un document par message (`topic`, `payload`, `receivedAt`, `deviceId`, `messageId`). **Insert only**, jamais d’`update`. **TTL 7 jours**.
   - **`campus` (PostgreSQL)** : `Device` + `Measurement` (200 brutes) + `MeasurementAverage` (10 min / 30 j). Seule source des `GET /api/*`.
-  - Flux : MQTT → **insert Mongo** → règles métier → Postgres si propre.
+  - Flux : MQTT → **insert Mongo (lake)** → **enqueue `consolidation_jobs`** → workers → Postgres si propre.
   - Driver natif `mongodb` (pas Prisma sur le lake) : schéma souple, écritures concurrentes sans row-lock SQL.
-- **Vérification :** `GET /health` → `db: up`, `lake_db: up`, `lake_engine: mongodb` ; `mongosh campus_lake --eval 'db.mqtt_events.countDocuments()'`.
-- **Limite :** pas d’auth Mongo en local (Compose pédagogique) ; pas d’endpoint public sur le lake ; échec lake loggé, l’API continue.
+- **Vérification :** `GET /health` → `db: up`, `lake_db: up`, `lake_engine: mongodb`, `consolidation.workers` ; `mongosh campus_lake --eval 'db.mqtt_events.countDocuments()'`.
+- **Limite :** pas d’auth Mongo en local (Compose pédagogique) ; pas d’endpoint public sur le lake ; échec lake **refuse** l’ingestion (plus de métier sans lake). File et workers : [010](010-ingestion-consolidation.md).

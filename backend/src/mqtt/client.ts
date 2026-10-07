@@ -17,11 +17,13 @@ export function isMqttConnected(): boolean {
 }
 
 export function connectMqtt(): MqttClient {
+  // clean:false + stable clientId: while this client is offline, Mosquitto
+  // queues QoS≥1 publishes for it and delivers them on reconnect.
   client = mqtt.connect(config.mqtt.url, {
     username: config.mqtt.username,
     password: config.mqtt.password,
-    clientId: `campus-backend-${process.pid}`,
-    clean: true,
+    clientId: config.mqtt.clientId,
+    clean: false,
     reconnectPeriod: 2000,
     connectTimeout: 10_000,
   });
@@ -30,7 +32,13 @@ export function connectMqtt(): MqttClient {
     connected = true;
     logEvent(
       "info",
-      { eventType: "mqtt.connected", status: "ok", topic: config.mqtt.url },
+      {
+        eventType: "mqtt.connected",
+        status: "ok",
+        topic: config.mqtt.url,
+        clientId: config.mqtt.clientId,
+        cleanSession: false,
+      },
       "mqtt connecte",
     );
     client?.subscribe(TOPICS, { qos: 1 }, (error) => {

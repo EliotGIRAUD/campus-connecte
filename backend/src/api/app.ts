@@ -5,6 +5,7 @@ import { prisma } from "../db";
 import { pingLake } from "../lake-db";
 import { freshnessOf } from "../mqtt/contract";
 import { isMqttConnected } from "../mqtt/client";
+import { getConsolidationLag } from "../mqtt/queue";
 
 function serializeDevice(device: {
   id: string;
@@ -55,6 +56,40 @@ export function createApp() {
   app.use(cors());
   app.use(express.json());
 
+  /**
+   * Liveness: process is up (orchestrator may restart on failure).
+   * Does not check dependencies — a hung event-loop would still fail probes separately.
+   */
+  app.get("/health/live", (_req, res) => {
+    res.status(200).json({ alive: true });
+  });
+
+  /**
+   * Readiness: API can serve business reads and workers can consolidate.
+   * Requires PostgreSQL + MongoDB. MQTT outage alone does not fail readiness.
+   */
+  app.get("/health/ready", async (_req, res) => {
+    let dbOk = false;
+    let lakeOk = false;
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      dbOk = true;
+    } catch {
+      dbOk = false;
+    }
+    try {
+      lakeOk = await pingLake();
+    } catch {
+      lakeOk = false;
+    }
+    const ready = dbOk && lakeOk;
+    res.status(ready ? 200 : 503).json({
+      ready,
+      db: dbOk ? "up" : "down",
+      lake_db: lakeOk ? "up" : "down",
+    });
+  });
+
   app.get("/health", async (_req, res) => {
     let dbOk = false;
     let lakeOk = false;
@@ -69,13 +104,48 @@ export function createApp() {
     } catch {
       lakeOk = false;
     }
-    const ok = dbOk && lakeOk;
-    res.status(ok ? 200 : 503).json({
-      ok,
-      mqtt: isMqttConnected() ? "connected" : "disconnected",
+
+    const mqttConnected = isMqttConnected();
+    let consolidation = {
+      pending: 0,
+      processing: 0,
+      error: 0,
+      oldestPendingAt: null as string | null,
+      lagMs: null as number | null,
+      workers: config.consolidationWorkers,
+    };
+    if (lakeOk) {
+      try {
+        consolidation = await getConsolidationLag();
+      } catch {
+        /* lag probe optional */
+      }
+    }
+
+    const lagDegraded =
+      consolidation.lagMs != null && consolidation.lagMs > config.consolidationLagWarnMs;
+    const ready = dbOk && lakeOk;
+    let status: "healthy" | "degraded" | "unavailable" = "healthy";
+    if (!ready) {
+      status = "unavailable";
+    } else if (!mqttConnected || lagDegraded || consolidation.error > 0) {
+      status = "degraded";
+    }
+
+    /**
+     * HTTP 503 only when not ready (restart traffic away).
+     * Degraded (MQTT down / lag) stays 200 so the API remains usable — alert, don't kill.
+     */
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      status,
+      liveness: "alive",
+      readiness: ready ? "ready" : "not_ready",
+      mqtt: mqttConnected ? "connected" : "disconnected",
       db: dbOk ? "up" : "down",
       lake_db: lakeOk ? "up" : "down",
       lake_engine: "mongodb",
+      consolidation,
       freshness_ms: config.freshnessMs,
     });
   });

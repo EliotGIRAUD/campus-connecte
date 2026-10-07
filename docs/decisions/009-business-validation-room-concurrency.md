@@ -11,8 +11,8 @@ Après J3, trois investigations ont montré que le contrat Zod (structure / type
 | Niveau | Rôle | Où |
 |---|---|---|
 | **Contrat** | JSON, littéraux, types, unités (`°C`, `ppm`) | Zod `telemetrySchema` |
-| **Technique** | Topic ↔ `device_id`, device connu, dédup `message_id` | `ingest.ts` |
-| **Métier** | Plages physiques + cohérence temporelle | `telemetrySchema` / garde avant insert |
+| **Technique** | Topic ↔ `device_id`, device connu, dédup `message_id` | `consolidate.ts` (après lake) |
+| **Métier** | Plages physiques + cohérence temporelle | `telemetrySchema` / garde avant insert Postgres |
 
 **Règles métier retenues (correction) :**
 

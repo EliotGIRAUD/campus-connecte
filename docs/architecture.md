@@ -6,8 +6,9 @@
 flowchart LR
     S["Simulateur fourni"] -->|"MQTT campus/v1"| M["Mosquitto"]
     M -->|"mqtt.js QoS 1"| B["Backend Express"]
-    B --> LAKE[("MongoDB campus_lake")]
-    B --> PG[("PostgreSQL campus")]
+    B -->|"ingestion"| LAKE[("MongoDB mqtt_events")]
+    B -->|"enqueue"| Q[("MongoDB consolidation_jobs")]
+    B -->|"workers N"| PG[("PostgreSQL campus")]
     B -->|"stdout JSON"| P["Promtail"]
     P --> L["Loki"]
     L --> G["Grafana"]
@@ -18,8 +19,9 @@ flowchart LR
 |---|---|---|
 | Capteur | Produit température, CO₂, état, disponibilité | Simulateur Python du kit |
 | Transport | Publication / abonnement, retained, Last Will | Mosquitto MQTT 3.1.1 |
-| Backend | Valide, identifie l’objet, persiste, expose l’API | Node.js, Express, mqtt.js, Zod |
-| Data lake | Tout message MQTT brut, timestampé, TTL 7 jours | MongoDB `campus_lake` |
+| Backend | Ingestion lake + file ; consolidation workers ; API | Node.js, Express, mqtt.js, Zod |
+| Data lake | Tout message MQTT brut, timestampé, TTL 7 jours | MongoDB `mqtt_events` (append-only) |
+| File consolidation | États pending → processed ; claim atomique | MongoDB `consolidation_jobs` |
 | Stockage API | Dernier état + 200 mesures + moyennes 10 min / 30 j | PostgreSQL `campus`, Prisma |
 | Observabilité | Logs structurés, filtres par device / eventType | Pino → Promtail → Loki → Grafana |
 | Mobile | Affiche mesures, cache local, états réseau distincts | React Native, Expo, Zustand, AsyncStorage, NetInfo |
@@ -66,14 +68,25 @@ La disponibilité MQTT (`online` / `offline`, LWT) est **distincte** : un objet 
 
 La MAJ du latest est **conditionnelle** (`lastObservedAt <= incoming`) pour rester correcte sous traitements concurrents.
 
-## Deux bases
+## Deux bases (+ file de consolidation)
 
 | Base | Rôle | Contenu | Consommateur |
 |---|---|---|---|
-| `campus_lake` (MongoDB) | Data lake — flux brut | collection `mqtt_events` (append-only, TTL 7 j) | audit |
-| `campus` (PostgreSQL) | Données **propres** pour le produit | `Device`, `Measurement` (200), `MeasurementAverage` (30 j) | `GET /api/*`, mobile |
+| `campus_lake.mqtt_events` | Data lake — flux brut append-only | topic, payload, receivedAt, TTL 7 j | audit / rejeu manuel |
+| `campus_lake.consolidation_jobs` | File d’attente consolidation | status, attempts, locks, payloadRaw | workers backend |
+| `campus` (PostgreSQL) | Données **propres** pour le produit | Device, Measurement, averages | `GET /api/*`, mobile |
 
-Chaque message MQTT est d’abord **inséré** dans Mongo (`insertOne`, jamais d’update), puis traité par les règles métier. L’API ne lit **jamais** le lake.
+**Ingestion** = insert lake + enqueue job (sans Postgres). **Consolidation** = N workers (`CONSOLIDATION_WORKERS`) qui claiment un job et écrivent Postgres. Détail : [review 4-5-6](review-4-5-6.md), [ADR 010](decisions/010-ingestion-consolidation.md).
+
+## Health
+
+| Endpoint | Sens |
+|---|---|
+| `/health/live` | Process vivant |
+| `/health/ready` | Postgres + Mongo OK |
+| `/health` | Synthèse `healthy` / `degraded` / `unavailable` + lag consolidation |
+
+MQTT déconnecté ⇒ `degraded` (API encore lisible). PG ou Mongo down ⇒ `unavailable` (503).
 
 ## Persistance API (`campus`)
 
@@ -99,7 +112,7 @@ Après une lecture réussie, les salles sont sauvées dans AsyncStorage avec `ca
 
 ## Indisponibilité broker
 
-Session MQTT `clean: true`, abonnements QoS 1. Coupure → logs `mqtt.*` → reprise automatique. Pas de file durable des mesures pendant l’arrêt du **backend**. Détail : [008](decisions/008-broker-qos.md).
+Session MQTT `clean: false` + `clientId` stable (`campus-backend`), abonnements QoS 1. Coupure → logs `mqtt.*` → reprise automatique. Pendant l’arrêt du **backend** (broker up), Mosquitto **met en file** les messages QoS ≥ 1 et les livre au retour. Détail : [008](decisions/008-broker-qos.md).
 
 ## Paramètres
 
@@ -112,5 +125,8 @@ Session MQTT `clean: true`, abonnements QoS 1. Coupure → logs `mqtt.*` → rep
 | `AVERAGE_WINDOW_MS` | 600000 (10 min) |
 | `AVERAGE_RETENTION_MS` | 2592000000 (30 j) |
 | `LAKE_TTL_SECONDS` | 604800 (7 j) |
+| `CONSOLIDATION_WORKERS` | 2 |
+| `CONSOLIDATION_LOCK_MS` | 30000 |
+| `CONSOLIDATION_LAG_WARN_MS` | 10000 |
 
-Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md).
+Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md), [010 pipeline ingestion/consolidation](decisions/010-ingestion-consolidation.md).

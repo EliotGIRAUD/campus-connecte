@@ -26,7 +26,6 @@
       "tags": ["j3"],
       "targetBlank": false,
       "title": "Recettes J3",
-      "tooltip": "",
       "type": "dashboards"
     }
   ],
@@ -36,15 +35,17 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
-      "title": "Compteurs (dernière heure / fenêtre du dashboard)",
+      "title": "Compteurs (fenêtre du dashboard — 0 si aucun événement)",
       "type": "row"
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "Mesures acceptées et écrites en PostgreSQL",
+      "description": "Mesures acceptées. Les autres compteurs restent à 0 tant qu’aucun incident n’est injecté dans la fenêtre de temps.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -63,14 +64,14 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.ingested\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.ingested\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -80,9 +81,11 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Injecter : docker compose run --rm tools incident sensor-001 invalid",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -90,7 +93,8 @@
               { "color": "orange", "value": 1 },
               { "color": "red", "value": 5 }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -99,14 +103,14 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.rejected\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.rejected\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -116,16 +120,19 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Injecter : docker compose run --rm tools incident sensor-001 duplicate",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "yellow", "value": 1 }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -134,14 +141,14 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.duplicate\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.duplicate\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -151,16 +158,19 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Injecter : docker compose run --rm tools incident sensor-001 delay",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "purple", "value": 1 }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -169,14 +179,14 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.stale_kept\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"telemetry.stale_kept\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -186,16 +196,19 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Injecter : docker compose stop mosquitto puis up -d mosquitto",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "red", "value": 1 }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -204,14 +217,14 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"mqtt.disconnected\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"mqtt.disconnected\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -221,16 +234,19 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Apparait après une reconnexion MQTT réussie",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "blue", "value": null },
               { "color": "green", "value": 1 }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -239,14 +255,14 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"mqtt.connected\"}[$__range]))",
+          "expr": "sum(count_over_time({compose_service=\"backend\", eventType=\"mqtt.connected\"}[$__auto])) or vector(0)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -267,14 +283,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
             "drawStyle": "line",
             "fillOpacity": 20,
             "lineWidth": 2,
-            "pointSize": 5,
             "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "spanNulls": false
           },
           "unit": "cps"
         },
@@ -465,10 +478,10 @@
       }
     ]
   },
-  "time": { "from": "now-30m", "to": "now" },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "Campus — Vue opérationnelle",
   "uid": "campus-ops",
-  "version": 1
+  "version": 3
 }

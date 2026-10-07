@@ -26,7 +26,7 @@ export type LogEventFields = {
 
 /** Structured application event for Loki / LogQL filters. */
 export function logEvent(
-  level: "info" | "warn" | "error",
+  level: "info" | "warn" | "error" | "debug",
   fields: LogEventFields,
   message?: string,
 ): void {
