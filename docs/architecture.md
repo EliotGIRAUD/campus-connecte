@@ -26,9 +26,9 @@ flowchart LR
 | File consolidation | États pending → processed ; claim atomique | MongoDB `consolidation_jobs` |
 | Stockage API | Dernier état + 200 mesures + moyennes 10 min / 30 j | PostgreSQL `campus`, Prisma |
 | Observabilité | Logs structurés, filtres par device / eventType | Pino → Promtail → Loki → Grafana |
-| Mobile | Affiche mesures, envoie commandes, cache local | React Native, Expo, Zustand, AsyncStorage, NetInfo |
+| Mobile | Affiche mesures, alertes, envoie commandes, cache local | React Native, Expo, Zustand, AsyncStorage, NetInfo |
 
-Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’historique, les commandes et l’observabilité du traitement.
+Le téléphone ne se connecte pas au broker. Le backend porte les règles, l’historique, les commandes, **les alertes métier** et l’observabilité du traitement.
 
 ## Identité des objets et topics
 
@@ -64,6 +64,23 @@ Mobile POST /api/devices/:id/commands
 | `TIMEOUT` | Aucun ACK avant `expires_at` ; un ACK tardif est journalisé (`command.ack_late`) sans repasser en succès |
 
 API : `POST/GET /api/devices/:deviceId/commands[/:commandId]`. Détail : [ADR 011](decisions/011-command-lifecycle.md).
+
+## Alertes CO₂ (J5)
+
+```text
+Télémétrie consolidee (latest mis à jour)
+  → decideCo2Alert(hasOpen, co2, 1500, 1300)
+  → OPEN (nouvelle ligne) | KEEP (peak) | RESOLVE | none
+```
+
+| Règle | Valeur |
+|---|---|
+| Ouverture | `CO₂ ≥ ALERT_CO2_PPM` (1500) et aucune alerte `OPEN` du type `high_co2` |
+| Maintien | alerte déjà `OPEN` et `CO₂ > 1300` → **pas** de nouvelle ligne |
+| Fermeture | `CO₂ ≤ ALERT_CO2_PPM − ALERT_HYSTERESIS_PPM` (1300) → statut `RESOLVED` |
+
+API : champ `active_alert` sur chaque device ; `GET /api/alerts` ; `GET /api/devices/:id/alerts`.  
+Logs : `alert.opened` / `alert.resolved` / `alert.peak_updated`. Détail : [ADR 012](decisions/012-co2-alerts-hysteresis.md).
 
 **Validation avant le cœur métier :** JSON parseable → schéma Zod (contrat + bornes métier) → `device_id` == segment topic → device connu du registre → `observed_at` pas trop dans le futur. Sinon `telemetry.rejected` (ou équivalent) et **pas** d’écriture PostgreSQL métier. Le lake Mongo peut quand même conserver le brut.
 
@@ -120,6 +137,7 @@ MQTT déconnecté ⇒ `degraded` (API encore lisible). PG ou Mongo down ⇒ `una
 - **`Measurement`** : journal append-only (sauf purge de borne). Contrainte unique sur `message_id` → doublon MQTT ignoré.
 - **`MeasurementAverage`** : moyenne 10 min, 30 jours.
 - **`Device`** : projection du dernier état. Une mesure en retard ne fait pas reculer `lastObservedAt`.
+- **`Alert`** : cycle `OPEN` / `RESOLVED` ; au plus une `OPEN` par `(deviceId, type)`.
 - **Borne brute** : `HISTORY_LIMIT` (200) mesures par objet.
 
 ## Data lake (`campus_lake` / MongoDB)
@@ -147,7 +165,8 @@ Session MQTT `clean: false` + `clientId` stable (`campus-backend`), abonnements 
 |---|---|
 | `FRESHNESS_MS` | 10000 |
 | `COMMAND_TIMEOUT_MS` | 15000 |
-| `ALERT_CO2_PPM` | 1500 (prévu alertes J5) |
+| `ALERT_CO2_PPM` | 1500 (ouverture alerte) |
+| `ALERT_HYSTERESIS_PPM` | 200 (fermeture ≤ 1300) |
 | `HISTORY_LIMIT` | 200 |
 | `AVERAGE_WINDOW_MS` | 600000 (10 min) |
 | `AVERAGE_RETENTION_MS` | 2592000000 (30 j) |
@@ -156,4 +175,4 @@ Session MQTT `clean: false` + `clientId` stable (`campus-backend`), abonnements 
 | `CONSOLIDATION_LOCK_MS` | 30000 |
 | `CONSOLIDATION_LAG_WARN_MS` | 10000 |
 
-Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md), [010 pipeline ingestion/consolidation](decisions/010-ingestion-consolidation.md), [011 commandes](decisions/011-command-lifecycle.md).
+Décisions : [001 stack](decisions/001-stack.md), [002 CQRS](decisions/002-architecture.md), [003 dédup/cache](decisions/003-deduplication-cache.md), [004 dual DB](decisions/004-dual-database.md), [005 rétention](decisions/005-retention.md), [006 identité](decisions/006-device-identity.md), [007 observabilité](decisions/007-observability.md), [008 broker/QoS](decisions/008-broker-qos.md), [009 validation métier / room / concurrence](decisions/009-business-validation-room-concurrency.md), [010 pipeline ingestion/consolidation](decisions/010-ingestion-consolidation.md), [011 commandes](decisions/011-command-lifecycle.md), [012 alertes CO₂](decisions/012-co2-alerts-hysteresis.md).

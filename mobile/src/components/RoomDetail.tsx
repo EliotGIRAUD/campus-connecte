@@ -18,6 +18,8 @@ import { HistoryCharts } from "../HistoryCharts";
 import { withLiveFreshness } from "../freshness";
 import {
   airQuality,
+  alertStatusLabel,
+  alertTypeLabel,
   commandStatusLabel,
   commandStatusTone,
   formatAge,
@@ -27,7 +29,6 @@ import {
 } from "../format";
 import { useNow } from "../hooks/useNow";
 import { useCampusStore } from "../store";
-import { CO2_HIGH_PPM } from "../thresholds";
 import { colors } from "../theme";
 import { MetricCard } from "./MetricCard";
 import { StatusDot } from "./StatusDot";
@@ -55,7 +56,7 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
 
   const latest = device.latest ? withLiveFreshness(device.latest, now) : null;
   const quality = latest ? airQuality(latest.co2.value) : null;
-  const highCo2 = Boolean(latest && latest.co2.value >= CO2_HIGH_PPM);
+  const productAlert = device.active_alert?.status === "OPEN" ? device.active_alert : null;
   const stale = latest?.freshness === "stale";
   const waitingAck = Boolean(command && !TERMINAL.has(command.status));
 
@@ -154,6 +155,25 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
         <Text style={styles.cardId}> · {device.device_id}</Text>
       </View>
 
+      {productAlert ? (
+        <View style={styles.alertCard} accessibilityRole="alert">
+          <View style={styles.pillRow}>
+            <TonePill label={alertTypeLabel(productAlert.type)} tone="danger" />
+            <TonePill label={alertStatusLabel(productAlert.status)} tone="danger" />
+          </View>
+          <Text style={styles.alertTitle}>Seuil CO₂ dépassé</Text>
+          <Text style={styles.alertBody}>
+            Ouverture ≥ {Math.round(productAlert.threshold_ppm)} ppm · fermeture ≤{" "}
+            {Math.round(productAlert.close_threshold_ppm)} ppm (hystérésis{" "}
+            {Math.round(productAlert.hysteresis_ppm)} ppm). Une seule alerte ouverte par objet.
+          </Text>
+          <Text style={styles.alertMeta}>
+            Pic {Math.round(productAlert.peak_co2)} ppm · depuis{" "}
+            {formatAge(productAlert.opened_at, now)}
+          </Text>
+        </View>
+      ) : null}
+
       {latest ? (
         <>
           <View style={styles.metrics}>
@@ -166,7 +186,7 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
               label="CO₂"
               value={String(Math.round(latest.co2.value))}
               unit={latest.co2.unit}
-              alert={highCo2}
+              alert={Boolean(productAlert)}
             />
           </View>
           <View style={styles.metaCard}>
@@ -176,7 +196,9 @@ export function RoomDetail({ device, onBack }: { device: DeviceSummary; onBack: 
                 label={ventilationLabel(device.ventilation)}
                 tone={device.ventilation ? "ok" : "warn"}
               />
-              {quality && quality.tone !== "ok" ? (
+              {productAlert ? (
+                <TonePill label={alertTypeLabel(productAlert.type)} tone="danger" />
+              ) : quality && quality.tone !== "ok" ? (
                 <TonePill label={quality.label} tone={quality.tone} />
               ) : null}
             </View>
@@ -322,6 +344,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  alertCard: {
+    marginTop: 16,
+    backgroundColor: colors.dangerMuted,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    gap: 8,
+  },
+  alertTitle: { color: colors.danger, fontSize: 17, fontWeight: "700" },
+  alertBody: { color: colors.text, fontSize: 13, lineHeight: 19 },
+  alertMeta: { color: colors.muted, fontSize: 12 },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metaValue: { marginTop: 10, color: colors.text, fontSize: 16, fontWeight: "600" },
   metaHint: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18 },

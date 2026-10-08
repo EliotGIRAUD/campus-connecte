@@ -13,6 +13,19 @@ export type LatestMeasurement = {
   co2: Quantity;
 };
 
+export type AlertSummary = {
+  alert_id: string;
+  device_id: string;
+  type: string;
+  status: string;
+  threshold_ppm: number;
+  close_threshold_ppm: number;
+  opened_at: string;
+  opened_co2: number;
+  peak_co2: number;
+  resolved_at: string | null;
+};
+
 export type Device = {
   device_id: string;
   room_id: string;
@@ -24,6 +37,7 @@ export type Device = {
     reported_at: string | null;
   };
   latest: LatestMeasurement | null;
+  active_alert: AlertSummary | null;
 };
 
 export type Room = {

@@ -26,6 +26,30 @@ model Device {
   measurements       Measurement[]
   averages           MeasurementAverage[]
   commands           Command[]
+  alerts             Alert[]
+}
+
+/// CO₂ (or future) product alert with hysteresis — at most one OPEN per device+type.
+model Alert {
+  id                 String    @id
+  deviceId           String
+  device             Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type               String
+  status             String
+  thresholdPpm       Float
+  hysteresisPpm      Float
+  openedAt           DateTime
+  openedCo2          Float
+  openedMessageId    String?
+  peakCo2            Float
+  resolvedAt         DateTime?
+  resolvedCo2        Float?
+  resolvedMessageId  String?
+  updatedAt          DateTime  @updatedAt
+
+  @@index([deviceId, status, openedAt(sort: Desc)])
+  @@index([status, openedAt(sort: Desc)])
+  @@index([type, status])
 }
 
 /// Lifecycle of a downlink command (mobile → API → MQTT → device → ACK).

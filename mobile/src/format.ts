@@ -77,3 +77,20 @@ export function freshnessLabel(freshness: string): string {
   }
   return "Aucune mesure";
 }
+
+export function alertTypeLabel(type: string): string {
+  if (type === "high_co2") {
+    return "Alerte CO₂";
+  }
+  return type;
+}
+
+export function alertStatusLabel(status: string): string {
+  if (status === "OPEN") {
+    return "Ouverte";
+  }
+  if (status === "RESOLVED") {
+    return "Résolue";
+  }
+  return status;
+}

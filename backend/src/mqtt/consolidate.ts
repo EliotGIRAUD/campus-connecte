@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { evaluateHighCo2Alert } from "../alerts";
 import { config } from "../config";
 import { prisma } from "../db";
 import { logEvent } from "../logger";
@@ -272,6 +273,14 @@ async function consolidateTelemetry(
     );
     return "processed";
   }
+
+  // Product alerts follow the latest projection only (not late/stale samples).
+  await evaluateHighCo2Alert({
+    deviceId: topicDeviceId,
+    co2Ppm: message.co2.value,
+    messageId: message.message_id,
+    observedAt,
+  });
 
   logEvent(
     "info",

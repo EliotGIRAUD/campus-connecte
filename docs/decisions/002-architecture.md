@@ -67,4 +67,4 @@ Comparaison SQLite / PostgreSQL / Mongo et CRUD / CQRS / event sourcing. Le cont
 
 - Une seule base API PostgreSQL à l’origine ; le data lake est MongoDB append-only ([004](004-dual-database.md)).
 - Pas de bus d’événements ni de replay.
-- Commandes = J4 ; auth et alertes = J4 / J5 selon le plan. Le schéma CQRS est déjà là pour les accueillir : un `GET` ne publiera pas de commande MQTT.
+- Commandes = J4 ; alertes CO₂ = J5 ([ADR 012](012-co2-alerts-hysteresis.md)). Auth / QR hors livrable. Le schéma CQRS reste : un `GET` ne publie pas de commande MQTT ; les alertes sont dérivées de la consolidation télémétrie.

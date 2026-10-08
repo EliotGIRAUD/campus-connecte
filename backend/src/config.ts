@@ -13,8 +13,10 @@ export const config = {
   freshnessMs: Number(process.env.FRESHNESS_MS ?? 10_000),
   /** Command ACK timeout — also used as MQTT expires_at window. */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS ?? 15_000),
-  /** Reserved for J5 — CO₂ alert rule / hysteresis (unused until alert product lands). */
+  /** Open high-CO₂ alert when latest CO₂ ≥ this (ppm). */
   alertCo2Ppm: Number(process.env.ALERT_CO2_PPM ?? 1500),
+  /** Close only when CO₂ ≤ open − hysteresis (default close at 1300 ppm). */
+  alertHysteresisPpm: Number(process.env.ALERT_HYSTERESIS_PPM ?? 200),
   historyLimit: Number(process.env.HISTORY_LIMIT ?? 200),
   averageWindowMs: Number(process.env.AVERAGE_WINDOW_MS ?? 10 * 60 * 1000),
   averageRetentionMs: Number(process.env.AVERAGE_RETENTION_MS ?? 30 * 24 * 60 * 60 * 1000),

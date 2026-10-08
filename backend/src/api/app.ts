@@ -1,6 +1,12 @@
 import cors from "cors";
 import express from "express";
 import { z } from "zod";
+import {
+  ALERT_TYPE_HIGH_CO2,
+  findOpenAlert,
+  serializeAlert,
+  type AlertRow,
+} from "../alerts";
 import { issueVentilationCommand, serializeCommand } from "../commands";
 import { config } from "../config";
 import { prisma } from "../db";
@@ -15,22 +21,25 @@ const createCommandBody = z.object({
   command_id: z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/).optional(),
 });
 
-function serializeDevice(device: {
-  id: string;
-  roomId: string;
-  label: string;
-  ventilation: boolean | null;
-  availability: string;
-  availabilityAt: Date | null;
-  availabilityReason: string | null;
-  lastMessageId: string | null;
-  lastObservedAt: Date | null;
-  lastReceivedAt: Date | null;
-  temperature: number | null;
-  temperatureUnit: string | null;
-  co2: number | null;
-  co2Unit: string | null;
-}) {
+function serializeDevice(
+  device: {
+    id: string;
+    roomId: string;
+    label: string;
+    ventilation: boolean | null;
+    availability: string;
+    availabilityAt: Date | null;
+    availabilityReason: string | null;
+    lastMessageId: string | null;
+    lastObservedAt: Date | null;
+    lastReceivedAt: Date | null;
+    temperature: number | null;
+    temperatureUnit: string | null;
+    co2: number | null;
+    co2Unit: string | null;
+  },
+  activeAlert: AlertRow | null = null,
+) {
   const now = new Date();
   const latest =
     device.lastMessageId && device.lastObservedAt && device.temperature !== null && device.co2 !== null
@@ -56,7 +65,26 @@ function serializeDevice(device: {
       reported_at: device.availabilityAt?.toISOString() ?? null,
     },
     latest,
+    active_alert: activeAlert ? serializeAlert(activeAlert) : null,
   };
+}
+
+async function loadOpenAlertsByDevice(deviceIds: string[]): Promise<Map<string, AlertRow>> {
+  if (deviceIds.length === 0) {
+    return new Map();
+  }
+  const rows = await prisma.alert.findMany({
+    where: { deviceId: { in: deviceIds }, status: "OPEN" },
+  });
+  const map = new Map<string, AlertRow>();
+  for (const row of rows) {
+    // One OPEN per device+type enforced in DB; prefer high_co2 if several types appear later.
+    const existing = map.get(row.deviceId);
+    if (!existing || row.type === ALERT_TYPE_HIGH_CO2) {
+      map.set(row.deviceId, row);
+    }
+  }
+  return map;
 }
 
 export function createApp() {
@@ -160,6 +188,7 @@ export function createApp() {
 
   app.get("/api/rooms", async (_req, res) => {
     const devices = await prisma.device.findMany({ orderBy: { roomId: "asc" } });
+    const openByDevice = await loadOpenAlertsByDevice(devices.map((d) => d.id));
     const byRoom = new Map<string, typeof devices>();
     for (const device of devices) {
       const list = byRoom.get(device.roomId) ?? [];
@@ -170,8 +199,16 @@ export function createApp() {
       rooms: [...byRoom.entries()].map(([room_id, roomDevices]) => ({
         room_id,
         label: roomDevices[0]?.label ?? room_id,
-        devices: roomDevices.map(serializeDevice),
+        devices: roomDevices.map((device) =>
+          serializeDevice(device, openByDevice.get(device.id) ?? null),
+        ),
       })),
+      alert_rule: {
+        type: ALERT_TYPE_HIGH_CO2,
+        open_ppm: config.alertCo2Ppm,
+        close_ppm: config.alertCo2Ppm - config.alertHysteresisPpm,
+        hysteresis_ppm: config.alertHysteresisPpm,
+      },
     });
   });
 
@@ -181,10 +218,38 @@ export function createApp() {
       res.status(404).json({ error: "salle inconnue" });
       return;
     }
+    const openByDevice = await loadOpenAlertsByDevice(devices.map((d) => d.id));
     res.json({
       room_id: String(req.params.roomId),
       label: devices[0].label,
-      devices: devices.map(serializeDevice),
+      devices: devices.map((device) => serializeDevice(device, openByDevice.get(device.id) ?? null)),
+    });
+  });
+
+  app.get("/api/alerts", async (req, res) => {
+    const statusFilter = String(req.query.status ?? "OPEN").toUpperCase();
+    if (statusFilter !== "OPEN" && statusFilter !== "RESOLVED" && statusFilter !== "ALL") {
+      res.status(400).json({ error: "status invalide (OPEN|RESOLVED|ALL)" });
+      return;
+    }
+    const limit = Math.min(Number(req.query.limit ?? 50), 100);
+    const where =
+      statusFilter === "ALL"
+        ? {}
+        : { status: statusFilter };
+    const alerts = await prisma.alert.findMany({
+      where,
+      orderBy: { openedAt: "desc" },
+      take: limit,
+    });
+    res.json({
+      alert_rule: {
+        type: ALERT_TYPE_HIGH_CO2,
+        open_ppm: config.alertCo2Ppm,
+        close_ppm: config.alertCo2Ppm - config.alertHysteresisPpm,
+        hysteresis_ppm: config.alertHysteresisPpm,
+      },
+      alerts: alerts.map(serializeAlert),
     });
   });
 
@@ -195,13 +260,16 @@ export function createApp() {
       return;
     }
     const limit = Math.min(Number(req.query.limit ?? 20), config.historyLimit);
-    const measurements = await prisma.measurement.findMany({
-      where: { deviceId: device.id },
-      orderBy: { observedAt: "desc" },
-      take: limit,
-    });
+    const [measurements, activeAlert] = await Promise.all([
+      prisma.measurement.findMany({
+        where: { deviceId: device.id },
+        orderBy: { observedAt: "desc" },
+        take: limit,
+      }),
+      findOpenAlert(device.id),
+    ]);
     res.json({
-      ...serializeDevice(device),
+      ...serializeDevice(device, activeAlert),
       measurements: measurements.map((item) => ({
         message_id: item.messageId,
         observed_at: item.observedAt.toISOString(),
@@ -209,6 +277,25 @@ export function createApp() {
         temperature: { value: item.temperature, unit: item.temperatureUnit },
         co2: { value: item.co2, unit: item.co2Unit },
       })),
+    });
+  });
+
+  app.get("/api/devices/:deviceId/alerts", async (req, res) => {
+    const deviceId = String(req.params.deviceId);
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) {
+      res.status(404).json({ error: "objet inconnu" });
+      return;
+    }
+    const limit = Math.min(Number(req.query.limit ?? 20), 50);
+    const alerts = await prisma.alert.findMany({
+      where: { deviceId },
+      orderBy: { openedAt: "desc" },
+      take: limit,
+    });
+    res.json({
+      device_id: deviceId,
+      alerts: alerts.map(serializeAlert),
     });
   });
 

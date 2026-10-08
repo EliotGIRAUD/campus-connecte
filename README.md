@@ -39,6 +39,15 @@ curl.exe -s -X POST http://localhost:3000/api/devices/sensor-001/commands `
   -d '{"action":"set_ventilation","enabled":true}'
 ```
 
+Alerte CO₂ (hystérésis, une ouverte par objet) :
+
+```powershell
+docker compose --profile tools run --rm tools incident sensor-001 high-co2
+curl.exe -s "http://localhost:3000/api/alerts?status=OPEN"
+docker compose --profile tools run --rm tools incident sensor-001 normal-co2
+curl.exe -s "http://localhost:3000/api/alerts?status=RESOLVED&limit=5"
+```
+
 ### Observabilité (J3)
 
 | Service | URL |
@@ -86,12 +95,22 @@ docker compose down -v
 |---|---|---|
 | Fraîcheur | 10 s | Une mesure est récente si `now - observed_at < 10 s` |
 | Timeout commande | 15 s | Sans ACK → `TIMEOUT` (`COMMAND_TIMEOUT_MS`) |
-| Alerte CO₂ | 1500 ppm | Prévu journée alertes |
+| Alerte CO₂ (ouverture) | 1500 ppm | `ALERT_CO2_PPM` → statut `OPEN` |
+| Alerte CO₂ (fermeture) | 1300 ppm | `ALERT_CO2_PPM − ALERT_HYSTERESIS_PPM` |
 | Historique brut | 200 mesures / objet | Dernières mesures affichables |
 | Moyenne 10 min | 30 jours | Historique allégé (détail salle) |
 | Lake Mongo | 7 jours | TTL sur le flux brut |
 
+**Limites connues (gel J5) :** pas d’auth API ; pas de push d’alertes (polling) ; pertes possibles si backend down longtemps (sessions MQTT) ; QR / auth hors livrable. Détail : [docs/J5.md](docs/J5.md), [docs/architecture.md](docs/architecture.md).
+
 Secrets : copier `.env.example` → `.env` ; **ne pas committer** `.env` avec des secrets réels. Les mots de passe du kit (`*-demo`) et Grafana `campus-demo` sont pédagogiques.
+
+### Tests
+
+```powershell
+cd backend; npm test
+cd ../mobile; npm test
+```
 
 ## Structure
 

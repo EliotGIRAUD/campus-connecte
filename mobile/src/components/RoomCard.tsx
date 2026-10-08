@@ -1,9 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { RoomSummary } from "../api";
 import { withLiveFreshness } from "../freshness";
-import { airQuality, formatAge, freshnessLabel } from "../format";
+import { airQuality, alertTypeLabel, formatAge, freshnessLabel } from "../format";
 import { useNow } from "../hooks/useNow";
-import { CO2_HIGH_PPM } from "../thresholds";
 import { colors } from "../theme";
 import { StatusDot } from "./StatusDot";
 import { TonePill } from "./TonePill";
@@ -14,23 +13,28 @@ export function RoomCard({ room, onPress }: { room: RoomSummary; onPress: () => 
   const latest = device?.latest ? withLiveFreshness(device.latest, now) : null;
   const online = device?.availability.status === "online";
   const quality = latest ? airQuality(latest.co2.value) : null;
-  const highCo2 = Boolean(latest && latest.co2.value >= CO2_HIGH_PPM);
+  const productAlert = device?.active_alert?.status === "OPEN" ? device.active_alert : null;
   const stale = latest?.freshness === "stale";
 
   const a11yBits = [
     room.label,
     online ? "objet en ligne" : "objet hors ligne",
+    productAlert ? "alerte CO2 ouverte" : null,
     latest
       ? `${latest.temperature.value.toFixed(1)} degrés, ${Math.round(latest.co2.value)} ppm, ${freshnessLabel(latest.freshness)}`
       : "aucune mesure",
-  ];
+  ].filter(Boolean);
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={a11yBits.join(". ")}
-      style={({ pressed }) => [styles.card, highCo2 && styles.cardAlert, pressed && styles.cardPressed]}
+      style={({ pressed }) => [
+        styles.card,
+        productAlert && styles.cardAlert,
+        pressed && styles.cardPressed,
+      ]}
     >
       <View style={styles.cardTop}>
         <View style={styles.cardTitleBlock}>
@@ -49,13 +53,15 @@ export function RoomCard({ room, onPress }: { room: RoomSummary; onPress: () => 
               {latest.temperature.value.toFixed(1)} {latest.temperature.unit}
             </Text>
             <View style={styles.kpiSep} />
-            <Text style={[styles.kpi, highCo2 && styles.kpiAlert]}>
+            <Text style={[styles.kpi, productAlert && styles.kpiAlert]}>
               {Math.round(latest.co2.value)} {latest.co2.unit}
             </Text>
           </View>
           <View style={styles.pillRow}>
             <TonePill label={freshnessLabel(latest.freshness)} tone={stale ? "warn" : "ok"} />
-            {quality && quality.tone !== "ok" ? (
+            {productAlert ? (
+              <TonePill label={alertTypeLabel(productAlert.type)} tone="danger" />
+            ) : quality && quality.tone !== "ok" ? (
               <TonePill label={quality.label} tone={quality.tone} />
             ) : null}
           </View>
